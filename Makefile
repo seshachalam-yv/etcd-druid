@@ -20,6 +20,7 @@ IMAGE_REPOSITORY    := $(REGISTRY)/etcd-druid
 IMAGE_BUILD_TAG     := $(VERSION)
 BUILD_DIR           := build
 PROVIDERS           := ""
+BUCKET_NAME			:= "e2e-test"
 
 IMG ?= ${IMAGE_REPOSITORY}:${IMAGE_BUILD_TAG}
 
@@ -126,3 +127,19 @@ test-e2e: $(KUBECTL) $(HELM) $(SKAFFOLD)
 update-dependencies:
 	@env GO111MODULE=on go get -u
 	@make revendor
+
+.PHONY: kind-up
+kind-up:
+	kind create cluster
+
+.PHONY: kind-down
+kind-down:
+	kind delete cluster --name=kind
+
+.PHONY: deploy-localstack
+deploy-localstack: $(KUBECTL)
+	BUCKET_NAME=$(BUCKET_NAME) ./hack/deploy-localstack.sh
+
+.PHONY: ci-e2e-kind
+ci-e2e-kind:
+	BUCKET_NAME=$(BUCKET_NAME) ./hack/ci-e2e-kind.sh
