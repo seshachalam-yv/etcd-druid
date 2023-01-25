@@ -20,6 +20,8 @@ IMAGE_REPOSITORY    := $(REGISTRY)/etcd-druid
 IMAGE_BUILD_TAG     := $(VERSION)
 BUILD_DIR           := build
 PROVIDERS           := ""
+BUCKET_NAME         := "e2e-test"
+KUBECONFIG_PATH     :=$(REPO_ROOT)/hack/e2e-test/infrastructure/kind/kubeconfig
 
 IMG ?= ${IMAGE_REPOSITORY}:${IMAGE_BUILD_TAG}
 
@@ -31,6 +33,7 @@ TOOLS_DIR := hack/tools
 include $(REPO_ROOT)/hack/tools.mk
 include $(REPO_ROOT)/vendor/github.com/gardener/gardener/hack/tools.mk
 
+kind-up kind-down ci-e2e-kind deploy-localstack test-e2e: export KUBECONFIG = $(KUBECONFIG_PATH)
 
 .PHONY: set-permissions
 set-permissions:
@@ -133,3 +136,19 @@ test-e2e: set-permissions $(KUBECTL) $(HELM) $(SKAFFOLD)
 update-dependencies:
 	@env GO111MODULE=on go get -u
 	@make revendor
+
+.PHONY: kind-up
+kind-up:
+	kind create cluster --name etcd-druid-e2e --config hack/e2e-test/infrastructure/kind/cluster.yaml
+
+.PHONY: kind-down
+kind-down:
+	kind delete cluster --name etcd-druid-e2e
+
+.PHONY: deploy-localstack
+deploy-localstack: $(KUBECTL)
+	BUCKET_NAME=$(BUCKET_NAME) ./hack/deploy-localstack.sh
+
+.PHONY: ci-e2e-kind
+ci-e2e-kind:
+	BUCKET_NAME=$(BUCKET_NAME) ./hack/ci-e2e-kind.sh
