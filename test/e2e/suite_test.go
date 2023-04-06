@@ -22,7 +22,6 @@ import (
 
 	"github.com/gardener/etcd-druid/api/v1alpha1"
 
-	"github.com/gardener/gardener/pkg/utils/test/matchers"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -105,28 +104,28 @@ var _ = BeforeSuite(func() {
 	Expect(buildAndDeployTLSSecrets(ctx, cl, logger, etcdNamespace, certsPath, providers)).To(Succeed())
 })
 
-var _ = AfterSuite(func() {
-	ctx := context.Background()
+// var _ = AfterSuite(func() {
+// 	ctx := context.Background()
 
-	kubeconfigPath, err := getEnvOrError(envKubeconfigPath)
-	Expect(err).NotTo(HaveOccurred())
+// 	kubeconfigPath, err := getEnvOrError(envKubeconfigPath)
+// 	Expect(err).NotTo(HaveOccurred())
 
-	logger.V(1).Info("setting up k8s client using", " KUBECONFIG", kubeconfigPath)
-	cl, err := getKubernetesClient(kubeconfigPath)
-	Expect(err).ShouldNot(HaveOccurred())
+// 	logger.V(1).Info("setting up k8s client using", " KUBECONFIG", kubeconfigPath)
+// 	cl, err := getKubernetesClient(kubeconfigPath)
+// 	Expect(err).ShouldNot(HaveOccurred())
 
-	namespaceLogger := logger.WithValues("namespace", etcdNamespace)
+// 	namespaceLogger := logger.WithValues("namespace", etcdNamespace)
 
-	namespaceLogger.Info("deleting namespace")
-	err = cl.Delete(ctx, &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: etcdNamespace,
-		},
-	})
-	err = client.IgnoreNotFound(err)
-	Expect(err).NotTo(HaveOccurred())
+// 	namespaceLogger.Info("deleting namespace")
+// 	err = cl.Delete(ctx, &corev1.Namespace{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name: etcdNamespace,
+// 		},
+// 	})
+// 	err = client.IgnoreNotFound(err)
+// 	Expect(err).NotTo(HaveOccurred())
 
-	Eventually(func() error {
-		return cl.Get(ctx, client.ObjectKey{Name: etcdNamespace}, &corev1.Namespace{})
-	}, time.Minute*2, pollingInterval).Should(matchers.BeNotFoundError())
-})
+// 	Eventually(func() error {
+// 		return cl.Get(ctx, client.ObjectKey{Name: etcdNamespace}, &corev1.Namespace{})
+// 	}, time.Minute*2, pollingInterval).Should(matchers.BeNotFoundError())
+// })

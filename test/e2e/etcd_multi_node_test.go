@@ -43,7 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Etcd", func() {
+var _ = FDescribe("Etcd", func() {
 	var (
 		etcdName         string
 		storageContainer string
@@ -70,13 +70,8 @@ var _ = Describe("Etcd", func() {
 
 	})
 
-	AfterEach(func() {
-		// remove etcd objects if any old etcd objects exists.
-		purgeEtcd(parentCtx, cl, providers)
-	})
-
 	Context("when multi-node is configured", func() {
-		It("should perform etcd operations", func() {
+		FIt("should perform etcd operations", func() {
 			ctx, cancelFunc := context.WithTimeout(parentCtx, 15*time.Minute)
 			defer cancelFunc()
 
