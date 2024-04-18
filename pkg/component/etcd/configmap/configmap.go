@@ -89,6 +89,8 @@ func (c *component) syncConfigmap(ctx context.Context, cm *corev1.ConfigMap) err
 		ListenClientUrls:    fmt.Sprintf("%s://0.0.0.0:%d", clientScheme, pointer.Int32Deref(c.values.ClientPort, defaultClientPort)),
 		AdvertisePeerUrls:   fmt.Sprintf("%s@%s@%s@%d", peerScheme, c.values.PeerServiceName, c.namespace, pointer.Int32Deref(c.values.ServerPort, defaultServerPort)),
 		AdvertiseClientUrls: fmt.Sprintf("%s@%s@%s@%d", clientScheme, c.values.PeerServiceName, c.namespace, pointer.Int32Deref(c.values.ClientPort, defaultClientPort)),
+
+		NextClusterVersionCompatible: true,
 	}
 
 	if clientSecurity != nil {
@@ -156,6 +158,8 @@ type etcdConfig struct {
 	AdvertiseClientUrls     string         `yaml:"advertise-client-urls"`
 	ClientSecurity          securityConfig `yaml:"client-transport-security,omitempty"`
 	PeerSecurity            securityConfig `yaml:"peer-transport-security,omitempty"`
+	// NextClusterVersionCompatible enables 3.4 to be compatible with next version 3.5, to allow 3.4 server to join 3.5 cluster and start on 3.5 schema.
+	NextClusterVersionCompatible bool `yaml:"next-cluster-version-compatible"`
 }
 
 type securityConfig struct {
