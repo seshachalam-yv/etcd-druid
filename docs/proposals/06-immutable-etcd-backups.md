@@ -49,7 +49,7 @@ This proposal aims to enhance the reliability and integrity of ETCD backups in E
 
 ## Motivation
 
-Ensuring the integrity and availability of ETCD backups is crucial for the ability to restore an ETCD cluster after it has irrecoverably gone down. Making backups immutable protects against unintended or malicious modifications post-creation, thereby enhancing the overall security posture.
+Ensuring the integrity and availability of ETCD backups is crucial for the ability to restore an ETCD cluster after it has irrecoverably gone down. Making backups immutable, protects against unintended or malicious modifications post-creation, thereby enhancing the overall security posture.
 
 ### Goals
 
@@ -85,7 +85,7 @@ The Bucket Immutability feature configures an immutability policy for a cloud st
 
 **Implementation Details:**
 
-- Operators are responsible for creating or updating buckets with these immutability settings before ETCD Druid starts uploading snapshots.
+- Operators are responsible for creating the new buckets or updating the existing buckets with these immutability settings before `etcd-backup-restore` starts uploading snapshots.
 - Once the bucket is configured to be immutable, snapshots uploaded by `etcd-backup-restore` are also immutable and cannot be altered or deleted until the immutability period expires.
 - No additional configuration needs to be passed to etcd-druid.
 
@@ -155,7 +155,7 @@ To address this, the compaction job should be enhanced to handle garbage collect
 
 Given that immutable backups cannot be deleted until the immutability period expires, there are scenarios, such as corrupted snapshots or other anomalies, where certain snapshots must be skipped during the restoration process. To facilitate this:
 
-- **Custom Metadata Tags:** Utilize custom metadata to mark specific objects (snapshots) that should be bypassed. To exclude a snapshot from the restoration process, attach custom metadata to it with the key `x-etcd-snapshot-exclude` and value `true`. This method is officially supported, as demonstrated in the [etcd-backup-restore PR](https://github.com/gardener/etcd-backup-restore/pull/776).
+- **Custom Metadata Tags:** Utilize custom metadata to mark specific objects (snapshots) that should be bypassed. To exclude a snapshot from the restoration process, attach custom metadata to it with the key `x-etcd-snapshot-exclude` and value `true`. This method is officially supported, as demonstrated in the [etcd-backup-restore PR](https://github.com/gardener/etcd-backup-restore/pull/776) for storage provider: GCS.
 
 ## Compatibility
 
@@ -166,7 +166,7 @@ The proposed changes are fully compatible with existing ETCD clusters and backup
 
 ## Implementation Steps
 
-1. **Enhance the Compaction Job:**
+1. **Enhance the Trigger of Compaction Job:**
      - Modify the compaction job in `etcd-backup-restore` to manage backup processes for hibernated clusters, including snapshot creation and garbage collection, while considering the new immutability constraints.
      - Implement the `--hibernation-snapshot-interval` flag in the compaction controller. Ensure that the compaction job can start an embedded ETCD instance to take snapshots during hibernation.
 
