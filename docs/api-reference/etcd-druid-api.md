@@ -11,6 +11,7 @@ Package v1alpha1 contains API Schema definitions for the druid v1alpha1 API grou
 ### Resource Types
 - [Etcd](#etcd)
 - [EtcdCopyBackupsTask](#etcdcopybackupstask)
+- [EtcdOperatorTask](#etcdoperatortask)
 
 
 
@@ -359,6 +360,134 @@ _Appears in:_
 | `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | LastTransitionTime is the last time the condition's status changed. |  |  |
 
 
+#### EtcdOperatorLastOperation
+
+
+
+EtcdOperatorLastOperation stores details of the most recent operation for the task.
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskStatus](#etcdoperatortaskstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name of the EtcdOperatorLastOperation. |  |  |
+| `state` _[OperationState](#operationstate)_ | State of the last operation, one of pending, progress, completed, failed. |  |  |
+| `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | LastTransitionTime is the time at which the operation state last transitioned from one state to another. |  |  |
+| `reason` _string_ | Reason is a human-readable message indicating details about the last operation. |  |  |
+
+
+#### EtcdOperatorTask
+
+
+
+EtcdOperatorTask represents an out-of-band operator task resource.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `druid.gardener.cloud/v1alpha1` | | |
+| `kind` _string_ | `EtcdOperatorTask` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[EtcdOperatorTaskSpec](#etcdoperatortaskspec)_ | Spec is the specification of the EtcdOperatorTask resource. |  |  |
+| `status` _[EtcdOperatorTaskStatus](#etcdoperatortaskstatus)_ | Status is most recently observed status of the EtcdOperatorTask resource. |  |  |
+
+
+#### EtcdOperatorTaskLastError
+
+
+
+EtcdOperatorTaskLastError stores details of the most recent error encountered for the task.
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskStatus](#etcdoperatortaskstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `code` _string_ | Code is an error code that uniquely identifies an error. |  |  |
+| `description` _string_ | Description is a human-readable message indicating details of the error. |  |  |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | ObservedAt is the time at which the error was observed. |  |  |
+
+
+#### EtcdOperatorTaskSpec
+
+
+
+EtcdOperatorTaskSpec is the spec for an EtcdOperatorTask resource.
+
+
+
+_Appears in:_
+- [EtcdOperatorTask](#etcdoperatortask)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[EtcdOperatorTaskType](#etcdoperatortasktype)_ | Type specifies the type of out-of-band operator task to be performed. |  |  |
+| `config` _string_ | Config is a task-specific configuration. |  |  |
+| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live to garbage collect the<br />related resource(s) of the task once it has been completed. |  |  |
+| `etcdRef` _[EtcdReference](#etcdreference)_ | OwnerEtcdReference refers to the name and namespace of the corresponding<br />Etcd owner for which the task has been invoked. |  |  |
+
+
+#### EtcdOperatorTaskStatus
+
+
+
+EtcdOperatorTaskStatus is the status for an EtcdOperatorTask resource.
+
+
+
+_Appears in:_
+- [EtcdOperatorTask](#etcdoperatortask)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the most recent generation observed for the resource. |  |  |
+| `state` _[TaskState](#taskstate)_ | State is the last known state of the task. |  |  |
+| `initiatedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | InitiatedAt is the time at which the task has moved from "pending" state to any other state. |  |  |
+| `lastErrors` _[EtcdOperatorTaskLastError](#etcdoperatortasklasterror) array_ | LastErrors represents the errors when processing the task. |  |  |
+| `lastOperation` _[EtcdOperatorLastOperation](#etcdoperatorlastoperation)_ | LastOperation captures the last operation status if the task involves many stages. |  |  |
+
+
+#### EtcdOperatorTaskType
+
+_Underlying type:_ _string_
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskSpec](#etcdoperatortaskspec)
+
+| Field | Description |
+| --- | --- |
+| `OnDemandSnapshot` |  |
+
+
+#### EtcdReference
+
+
+
+EtcdReference is a custom struct to hold the name and namespace of the Etcd owner.
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskSpec](#etcdoperatortaskspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `namespace` _string_ |  |  |  |
+| `name` _string_ |  |  |  |
+
+
 #### EtcdRole
 
 _Underlying type:_ _string_
@@ -554,6 +683,25 @@ _Appears in:_
 | `extensive` | Extensive is a constant for metrics level extensive.<br /> |
 
 
+#### OperationState
+
+_Underlying type:_ _string_
+
+OperationState represents the state of the last operation.
+
+
+
+_Appears in:_
+- [EtcdOperatorLastOperation](#etcdoperatorlastoperation)
+
+| Field | Description |
+| --- | --- |
+| `Failed` |  |
+| `Pending` |  |
+| `Completed` |  |
+| `InProgress` |  |
+
+
 #### SchedulingConstraints
 
 
@@ -656,6 +804,26 @@ _Appears in:_
 | `tlsCASecretRef` _[SecretReference](#secretreference)_ |  |  |  |
 | `serverTLSSecretRef` _[SecretReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#secretreference-v1-core)_ |  |  |  |
 | `clientTLSSecretRef` _[SecretReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#secretreference-v1-core)_ |  |  |  |
+
+
+#### TaskState
+
+_Underlying type:_ _string_
+
+TaskState represents the state of the task.
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskStatus](#etcdoperatortaskstatus)
+
+| Field | Description |
+| --- | --- |
+| `Failed` |  |
+| `Pending` |  |
+| `Rejected` |  |
+| `Succeeded` |  |
+| `InProgress` |  |
 
 
 #### WaitForFinalSnapshotSpec

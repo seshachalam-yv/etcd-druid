@@ -25,6 +25,12 @@ func EmptyEtcdPartialObjectMetadata() *metav1.PartialObjectMetadata {
 	return etcdObjMetadata
 }
 
+func EmptyEtcdOperatorTaskPartialObjectMetadata() *metav1.PartialObjectMetadata {
+	taskObjMetadata := &metav1.PartialObjectMetadata{}
+	taskObjMetadata.SetGroupVersionKind(druidv1alpha1.SchemeGroupVersion.WithKind("EtcdOperatorTask"))
+	return taskObjMetadata
+}
+
 // GetLatestEtcd returns the latest version of the Etcd object.
 func GetLatestEtcd(ctx context.Context, client client.Client, objectKey client.ObjectKey, etcd *druidv1alpha1.Etcd) ReconcileStepResult {
 	if err := client.Get(ctx, objectKey, etcd); err != nil {
@@ -36,9 +42,29 @@ func GetLatestEtcd(ctx context.Context, client client.Client, objectKey client.O
 	return ContinueReconcile()
 }
 
+func GetLatestEtcdOperatorTask(ctx context.Context, client client.Client, objectKey client.ObjectKey, task *druidv1alpha1.EtcdOperatorTask) ReconcileStepResult {
+	if err := client.Get(ctx, objectKey, task); err != nil {
+		if apierrors.IsNotFound(err) {
+			return DoNotRequeue()
+		}
+		return ReconcileWithError(err)
+	}
+	return ContinueReconcile()
+}
+
 // GetLatestEtcdPartialObjectMeta returns the latest version of the Etcd object metadata.
 func GetLatestEtcdPartialObjectMeta(ctx context.Context, client client.Client, objectKey client.ObjectKey, etcdObjMetadata *metav1.PartialObjectMetadata) ReconcileStepResult {
 	if err := client.Get(ctx, objectKey, etcdObjMetadata); err != nil {
+		if apierrors.IsNotFound(err) {
+			return DoNotRequeue()
+		}
+		return ReconcileWithError(err)
+	}
+	return ContinueReconcile()
+}
+
+func GetLatestEtcdOperatorTaskPartialObjectMeta(ctx context.Context, client client.Client, objectKey client.ObjectKey, taskObjMetadata *metav1.PartialObjectMetadata) ReconcileStepResult {
+	if err := client.Get(ctx, objectKey, taskObjMetadata); err != nil {
 		if apierrors.IsNotFound(err) {
 			return DoNotRequeue()
 		}

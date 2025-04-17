@@ -11,6 +11,7 @@ import (
 	"github.com/gardener/etcd-druid/internal/controller/compaction"
 	"github.com/gardener/etcd-druid/internal/controller/etcd"
 	"github.com/gardener/etcd-druid/internal/controller/etcdcopybackupstask"
+	"github.com/gardener/etcd-druid/internal/controller/etcdoperatortask"
 	"github.com/gardener/etcd-druid/internal/controller/secret"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,6 +34,14 @@ func Register(mgr ctrl.Manager, config *Config) error {
 		return err
 	}
 
+	// Add etcd-operator-task reconciler to the manager
+	etcdOperatorTaskReconciler := etcdoperatortask.New(mgr, config.EtcdOperatorTask)
+	if err != nil {
+		return err
+	}
+	if err = etcdOperatorTaskReconciler.RegisterWithManager(mgr); err != nil {
+		return err
+	}
 	// Add compaction reconciler to the manager if the CLI flag enable-backup-compaction is true.
 	if config.Compaction.EnableBackupCompaction {
 		compactionReconciler, err := compaction.NewReconciler(mgr, config.Compaction)
