@@ -2,7 +2,7 @@
 
 ## 1. Task Categories
 
-We classify operator tasks into four main categories, based on how they interact with etcd and their execution requirements:
+EtcdOperator tasks are categorized into four main types based on their interaction with etcd and execution requirements:
 
 | **Category**                            | **Description**                                                                                | **Examples**                                                                         | **Execution Context**             |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------- |
@@ -32,59 +32,38 @@ There are two potential options for the **operator task controller**:
 
 ## 3. Recommended Architecture
 
-We propose implementing the **EtcdOperatorTask** controller as part of `etcd-druid` (the operator):
-
-- **Centralised orchestration**: All task logic and status in one place, improving discoverability and coordination.
-- **Full K8s API access**: Operator can scale/update resources as needed.
-- **Safe coordination**: Operator can pause main etcd reconciliation during disruptive tasks, minimising risk.
-
-If a task requires the `etcd-backup-restore` container, the operator can coordinate via HTTP endpoints, ensuring no conflicts with scheduled operations.
+We recommend implementing the **EtcdOperatorTask** controller as part of `etcd-druid`:
+- All tasks are feasible from etcd-druid, avoiding the need for multiple controllers.
+- If a task requires the `etcd-backup-restore` container, etcd-druid can coordinate via HTTP endpoints, ensuring no conflicts with scheduled operations.
 
 ---
 
-## 4. Controller Structure & Extensibility
+## 4. Controller Design
 
-### Key Components
-
-- **TaskReconciler**: Main reconciliation loop, manages lifecycle of EtcdOperatorTask resources.
-- **TaskExecutorRegistry**: Registry mapping task types to their executors, enabling easy extensibility.
-- **TaskExecutor**: Interface for implementing task-specific logic (preconditions, execution, cleanup).
-
-#### Component Diagram
-```mermaid
-graph TD
-    subgraph Controller
-        TR[TaskReconciler]
-        REG[TaskExecutorRegistry]
-        EX[OnDemandSnapshotTaskExecutor]
-    end
-    TR -->|Lookup executor by task type| REG
-    REG -->|Returns executor instance| EX
-    TR -->|Invokes executor methods| EX
-    EX -->|Triggers snapshot via HTTP| HTTPClient["etcd-backup-restore HTTP client"]
-```
-
----
 
 ### TaskExecutor Interface
 
 Defines the contract for all task executors:
 
 ```go
+type TaskExecutionResult struct {
+    LastOperation *v1alpha1.EtcdOperatorLastOperation
+    LastError     *v1alpha1.EtcdOperatorLastError
+    RequeueAfter  time.Duration // 0 if no requeue needed
+    Completed     bool
+}
+
+// TaskExecutor defines the interface for task execution.
 type TaskExecutor interface {
-    CheckPreconditions(ctx context.Context, task *EtcdOperatorTask) (bool, error)
-    Execute(ctx context.Context, task *v1alpha1.EtcdOperatorTask) (completed bool, opStatus *OperationStatus, err error)
-    Cleanup(ctx context.Context, task *EtcdOperatorTask) error
+    CheckPreconditions(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
+    Execute(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
+    Cleanup(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
 }
 ```
-## Interface Methods
-- **CheckPreconditions**: Validate if the task can proceed.
-- **Execute**: Attempt to make progress; returns whether the task is complete.
-- **Cleanup**: Perform any necessary cleanup after execution.
 
 ---
 
-### Reconciliation Flow
+## 6. Reconciliation Flow
 
 The core reconciliation logic:
 
@@ -94,33 +73,62 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req reconcile.Request) (
     if task == nil {
         return doNotRequeue()
     }
+
+    executor, err := r.createTaskExecutor(task)
+    if err != nil {
+        updateStatusWithError(task, "UnknownTaskType")
+        return r.collectGarbage(task)
+    }
+
     if isDeletionRequested(task) {
-        handleDeletion(task)
-        return doNotRequeue()
+        return r.triggerTaskDeletionFlow(ctx, logger, taskObjKey, executor)
     }
     if isTaskCompleted(task) {
-        collectGarbage(task)
-        return doNotRequeue()
+        return r.collectGarbage(task)
     }
-    executor := r.registry.Get(task.Spec.Type)
-    if executor == nil {
-        updateStatusWithError(task, "UnknownTaskType")
-        return doNotRequeue()
-    }
-    return reconcileTask(task, executor)
+
+    return r.reconcileTask(task, executor)
 }
 ```
 
-And the stepwise reconciliation:
+### Task Executor Instantiation
 
 ```go
+// createTaskExecutor creates a TaskExecutor instance for the given task,
+// parsing task.Spec.Config or other settings at construction.
+// Returns an error if the task type is unsupported.
+func createTaskExecutor(
+    task *v1alpha1.EtcdOperatorTask,
+    k8sClient client.Client,
+    logger logr.Logger,
+) (TaskExecutor, error) {
+    switch task.Spec.Type {
+    case v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot:
+        return NewOnDemandSnapshot(k8sClient, logger, task), nil
+    // Add more cases for new task types
+    default:
+        return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
+    }
+}
+```
+
+```go
+// reconcileTask manages preconditions, execution, and status updates.
 func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
     ctx.Logger.Info("Reconciling task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
     reconcileStepFns := []reconcileFn{
+        r.recordTaskReconciliationStartOperation,
         r.ensureFinalizer,
+        r.moveTaskToPending,
+        r.checkAnySameTypeTaskInProgress,
         r.checkPreconditions,
+        r.moveTaskToInProgress,
         r.executeTask,
+        r.recordTaskReconciliationSuccessOperation,
+        r.updateObservedGeneration,
+        r.removeTaskReconciliationOperationAnnotation,
     }
+
     for _, step := range reconcileStepFns {
         ctx.Logger.Info("Executing step", "step", step)
         result := step(ctx, taskObjKey, executor)
@@ -128,31 +136,64 @@ func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.Obje
             return result
         }
     }
+
     ctx.Logger.Info("Task execution completed", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
-    return ctrlutils.ReconcileAfter(r.config.RequeueInterval, "Task execution in progress")
+    return ctrlutils.ReconcileAfter(task.Spec.TTLSecondsAfterFinished, "Task completed, waiting for TTL to expire")
+}
+```
+
+### Deletion Flow
+
+```go
+func (r *Reconciler) triggerTaskDeletionFlow(
+    ctx tasks.TaskContext,
+    logger logr.Logger,
+    taskObjKey client.ObjectKey,
+    executor tasks.TaskExecutor,
+) ctrlutils.ReconcileStepResult {
+    deletionStepFns := []reconcileFn{
+        r.recordTaskDeletionStartOperation,
+        r.cleanupTaskResources,
+        r.recordTaskDeletionSuccessOperation,
+        r.removeTaskFinalizer,
+    }
+    for _, fn := range deletionStepFns {
+        result := fn(ctx, taskObjKey, executor)
+        if ctrlutils.ShortCircuitReconcileFlow(result) {
+            return r.recordTaskIncompleteDeletionOperation(ctx, logger, taskObjKey, result)
+        }
+    }
+    return ctrlutils.DoNotRequeue()
 }
 ```
 
 ---
-## Open Questions:
-1) **Do we allow spec updates to the Operator CR?** 
-    * If we permit spec updates after tasks are scheduled but before they execute, we introduce additional complexity in task handling. // better phrasing needed.
-    
-        ```go
-        type maintenanceOps struct {
-          // +optional
-          EtcdCompaction bool `json:"etcdCompaction,omitempty"`
-          // +optional
-          EtcdDefragmentation bool `json:"etcdDefragmentation,omitempty"`
-        }
-        ```
-2) **In case of on-demand delta snapshot, is there a check needed to ensure that a FullSnaphot is present previously?**
+## 5. Extending with New Task Types
 
-3) **In case an on-demand operation fails due to an internal issue, do we re-trigger the operation ?**
+To add a new task type:
+1. Implement the `TaskExecutor` interface for the new task.
+2. Instantiate the executor in the reconciler with any required dependencies during task processing.
 
-4) **Coordination with scheduled operations** -> Handled via endpoints in backup restore.
-## What is to be done:
-1) **Introduce endpoints in `etcd-backup-restore` for carrying the etcd `compaction` and `defragmentation` operations.**
-	* The alternative to this is to setup and introduce kubernetes jobs for the same.
-2) Handle conflicts wrt operations (scheduled vs on demand) -> Logic to be implemented 
-3) Type 3 will require direct communication with the etcd cluster via the etcd client. This will have to be passed into the reconcile flow on a need basis.
+This design ensures that each task execution is isolated, customizable, and testable, and avoids the pitfalls of global registries or shared state.
+
+---
+## Open Questions
+
+1. **When should the task status be updated to 'rejected'?**
+2. **Do we allow spec updates to the Operator CR?**
+    - Allowing spec updates after tasks are scheduled but before execution introduces complexity in task handling. (Needs better phrasing and decision.)
+    ```go
+    type maintenanceOps struct {
+      // +optional
+      EtcdCompaction bool `json:"etcdCompaction,omitempty"`
+      // +optional
+      EtcdDefragmentation bool `json:"etcdDefragmentation,omitempty"`
+    }
+    ```
+3. **For on-demand delta snapshots, should we check that a full snapshot exists first?**
+4. **If an on-demand operation fails due to an internal issue, should we automatically re-trigger it?**
+5. **Should we refactor the current snapshot endpoint to be asynchronous?**
+6. **How should we coordinate with scheduled operations?**
+    - Currently handled via endpoints in backup-restore.
+
+---
