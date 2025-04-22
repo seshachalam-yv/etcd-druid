@@ -63,6 +63,50 @@ type TaskExecutor interface {
 
 ---
 
+## Task Executor Registration Pattern
+
+To improve extensibility and maintainability, the EtcdOperatorTask reconciler uses an executor registration pattern. Instead of hardcoding executor creation logic in a switch statement, the reconciler maintains an internal registry mapping task types to executor factory functions.
+
+### How it Works
+- The reconciler struct contains a field:
+
+  ```go
+  executorRegistry map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory
+  ```
+
+```go 
+func (r *EtcdOperatorTaskReconciler) RegisterTaskExecutor(
+    taskType v1alpha1.EtcdOperatorTaskType,
+    factory TaskExecutorFactory,
+) {
+    if r.executorRegistry == nil {
+        r.executorRegistry = make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory)
+    }
+    r.executorRegistry[taskType] = factory
+}
+
+func (r *EtcdOperatorTaskReconciler) createTaskExecutor(
+    task *v1alpha1.EtcdOperatorTask,
+) (TaskExecutor, error) {
+    factory, ok := r.executorRegistry[task.Spec.Type]
+    if !ok {
+        return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
+    }
+    return factory(r.Client, r.Log, task), nil
+}
+```
+- Executors are registered with the reconciler during setup:
+
+  ```go
+  reconciler.RegisterTaskExecutor(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, NewOnDemandSnapshot)
+  ```
+
+- When a task needs to be executed, the reconciler looks up the appropriate factory and instantiates the executor:
+
+  ```go
+  executor, err := r.createTaskExecutor(task)
+  ```
+
 ## 6. Reconciliation Flow
 
 The core reconciliation logic:
@@ -91,27 +135,6 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req reconcile.Request) (
 }
 ```
 
-### Task Executor Instantiation
-
-```go
-// createTaskExecutor creates a TaskExecutor instance for the given task,
-// parsing task.Spec.Config or other settings at construction.
-// Returns an error if the task type is unsupported.
-func createTaskExecutor(
-    task *v1alpha1.EtcdOperatorTask,
-    k8sClient client.Client,
-    logger logr.Logger,
-) (TaskExecutor, error) {
-    switch task.Spec.Type {
-    case v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot:
-        return NewOnDemandSnapshot(k8sClient, logger, task), nil
-    // Add more cases for new task types
-    default:
-        return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
-    }
-}
-```
-
 ```go
 // reconcileTask manages preconditions, execution, and status updates.
 func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
@@ -126,7 +149,6 @@ func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.Obje
         r.executeTask,
         r.recordTaskReconciliationSuccessOperation,
         r.updateObservedGeneration,
-        r.removeTaskReconciliationOperationAnnotation,
     }
 
     for _, step := range reconcileStepFns {
@@ -167,14 +189,109 @@ func (r *Reconciler) triggerTaskDeletionFlow(
 }
 ```
 
----
-## 5. Extending with New Task Types
+```go
+type SnapshotExecutor struct {
+	k8sClient   client.Client
+	httpClient  *http.Client
+	log         logr.Logger
+}
 
-To add a new task type:
-1. Implement the `TaskExecutor` interface for the new task.
-2. Instantiate the executor in the reconciler with any required dependencies during task processing.
+func NewSnapshotExecutor(k8sClient client.Client, log logr.Logger) TaskExecutor {
+	return &SnapshotExecutor{
+		k8sClient:  k8sClient,
+		httpClient: &http.Client{Timeout: 15 * time.Second},
+		log:        log.WithName("snapshot-exec"),
+	}
+}
 
-This design ensures that each task execution is isolated, customizable, and testable, and avoids the pitfalls of global registries or shared state.
+func (e *SnapshotExecutor) CheckPreconditions(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*tasks.TaskExecutionResult, error) {
+	// 1. Make sure etcd StatefulSet has a Ready pod
+	podIP, err := e.firstReadyEtcdPodIP(ctx, task.Spec.EtcdRef.Name, task.Namespace)
+	if err != nil {
+		e.log.Info("no ready pod yet → requeue", "err", err)
+		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhasePending, RequeueAfter: 20 * time.Second}, nil
+	}
+	// 2. Quick TCP probe to sidecar port
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(podIP, "8080"), 2*time.Second)
+	if err != nil {
+		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhasePending, RequeueAfter: 15 * time.Second}, nil
+	}
+	_ = conn.Close()
+	return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseRunning}, nil
+}
+
+func (e *SnapshotExecutor) Execute(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*tasks.TaskExecutionResult, error) {
+	podIP, _ := e.firstReadyEtcdPodIP(ctx, task.Spec.EtcdRef.Name, task.Namespace)
+
+	var (
+		snapType      string = "full"
+		timeout       = 30 * time.Second
+	)
+	if t, ok := task.Spec.Config["snapshotType"].(string); ok && t == "Delta" {
+		snapType = "delta"
+	}
+	if v, ok := task.Spec.Config["timeoutSeconds"].(float64); ok && v > 0 {
+		timeout = time.Duration(v) * time.Second
+	}
+
+	url := fmt.Sprintf("http://%s/snapshot/%s", podIP, snapType)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	e.log.Info("trigger snapshot", "url", url)
+
+	e.httpClient.Timeout = timeout
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseFailed}, errors.Wrap(err, "HTTP call failed")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseFailed},
+			fmt.Errorf("sidecar returned %d", resp.StatusCode)
+	}
+
+	op := &druidv1a1.EtcdOperatorLastOperation{
+		Description: fmt.Sprintf("%s snapshot triggered", snapType),
+		LastUpdateTime: metav1.Now(),
+	}
+
+	return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseSucceeded, LastOp: op}, nil
+}
+
+func (e *SnapshotExecutor) Cleanup(ctx  tasks.TaskContext, _ *v1alpha1.EtcdOperatorTask) (*tasks.TaskExecutionResult, error) {
+    // no-op
+	return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseSucceeded}, nil
+}
+
+// ----------------- helpers -----------------
+
+func (e *SnapshotExecutor) firstReadyEtcdPodIP(ctx  tasks.TaskContext, etcdName, ns string) (string, error) {
+	var podList corev1.PodList
+	if err := e.k8sClient.List(ctx, &podList,
+		client.InNamespace(ns),
+		client.MatchingLabels{"app": "etcd", "instance": etcdName}); err != nil {
+		return "", err
+	}
+	for _, p := range podList.Items {
+		if cond := getPodReadyCondition(p.Status); cond != nil && cond.Status == corev1.ConditionTrue {
+			return p.Status.PodIP, nil
+		}
+	}
+	return "", fmt.Errorf("no Ready etcd pods found")
+}
+
+
+### Registering a New Task Executor
+1. Implement the executor and its factory function (constructor).
+2. During reconciler initialization, register the new executor:
+   ```go
+   reconciler.RegisterTaskExecutor(v1alpha1.<YourTaskType>, New<YourExecutor>)
+   ```
+
+### Benefits
+- **Extensible:** New executors can be added without modifying the core creation logic.
+- **Decoupled:** Executor implementations are independent from the reconciler logic.
+- **Testable:** The registry can be injected or mocked for testing.
 
 ---
 ## Open Questions
