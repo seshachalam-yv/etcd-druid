@@ -23,6 +23,8 @@ import (
 
 // RegisterWithManager sets up the controller on the given manager.
 func (r *Reconciler) RegisterWithManager(mgr ctrl.Manager) error {
+	executorFactories := make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory)
+	// add to the executorFactories as per need by adding to the map here.
 	return ctrl.
 		NewControllerManagedBy(mgr).
 		Named(ControllerName).

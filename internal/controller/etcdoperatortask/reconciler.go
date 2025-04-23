@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"time"
+	"fmt"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
@@ -30,33 +31,69 @@ const (
 	FinalizerName  = "etcd-druid.gardener.cloud/etcd-operator-task"
 )
 
+
+type TaskExecutorFactory func(client client.Client, log logr.Logger, task *v1alpha1.EtcdOperatorTask) TaskExecutor
 type Reconciler struct {
 	client   client.Client
 	recorder record.EventRecorder
 	logger   logr.Logger
-	config   *Config
-	registry *tasks.TaskExecutorRegistry
+	config   *Config // is this field needed?
+	// registry *tasks.TaskExecutorRegistry
+	executorRegistry map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory
 }
 
 type reconcileFn func(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult
 
-func New(mgr ctrl.Manager, cfg *Config) *Reconciler {
-	registry := tasks.NewTaskExecutorRegistry()
-	registry.Register(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, tasks.NewOnDemandSnapshot(mgr.GetClient()))
-	// Register more executors as needed
+func New(mgr ctrl.Manager, cfg *Config, executorFactories map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory) *Reconciler {
+	// registry := tasks.NewTaskExecutorRegistry()
+	// registry.Register(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, tasks.NewOnDemandSnapshot(mgr.GetClient()))
 
-	return &Reconciler{
-		client:   mgr.GetClient(),
+	// Register more executors as needed
+	// will be using the factory here to register new controllers.
+	// TODO Define methods to do the above.
+
+	// return &Reconciler{
+	// 	client:   mgr.GetClient(),
+	// 	recorder: mgr.GetEventRecorderFor(ControllerName),
+	// 	logger:   ctrl.Log.WithName(ControllerName),
+	// 	config:   cfg,
+	// 	registry: registry,
+	// }
+
+
+	reconciler := &Reconciler{
+		client: mgr.GetClient(),
 		recorder: mgr.GetEventRecorderFor(ControllerName),
-		logger:   ctrl.Log.WithName(ControllerName),
-		config:   cfg,
-		registry: registry,
+		logger: ctrl.Log.WithName(ControllerName),
+		config: cfg,
+		executorRegistry: make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory),
 	}
+	for taskType, factory := range executorFactories {
+		reconciler.RegisterTaskExecutor(taskType, factory)
+	}
+	
+	return reconciler
+
+}
+
+func (r *Reconciler) RegisterTaskExecutor(taskType v1alpha1.EtcdOperatorTaskType, factory TaskExecutorFactory) {
+    if r.executorRegistry == nil {
+        r.executorRegistry = make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory)
+    }
+    r.executorRegistry[taskType] = factory
+}
+
+func (r *Reconciler) createTaskExecutor(task *v1alpha1.EtcdOperatorTask,) (TaskExecutor, error) {
+    factory, ok := r.executorRegistry[task.Spec.Type]
+    if !ok {
+        return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
+    }
+    return factory(r.Client, r.Log, task), nil
 }
 
 // +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdoperatortasks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdoperatortasks/status,verbs=list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcds,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcds,verbs=get;list;watc  h;create;update;patch
 // +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcds/status,verbs=get;create;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;get;list
 
@@ -75,8 +112,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		taskCtx.Logger.Error(err, "Failed to fetch task")
 		return ctrlutils.ReconcileWithError(err).ReconcileResult()
 	}
-
-	taskExecutor, err := r.registry.Get(task.Spec.Type)
+	// TODO: Replace the below with the  
+	taskExecutor, err := r.createTaskExecutor(task)
 	if err != nil {
 		r.logger.Error(err, "Failed to get task executor")
 		return ctrl.Result{}, err
