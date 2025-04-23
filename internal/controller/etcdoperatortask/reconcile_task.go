@@ -15,25 +15,38 @@ import (
 
 // reconcileTask manages preconditions, execution, and status updates.
 func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
-	ctx.Logger.Info("Reconciling task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
+    ctx.Logger.Info("Reconciling task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
+    // TODO: pseudocode fort the functions below
 	reconcileStepFns := []reconcileFn{
-		// r.recordReconcileStartOperation,
-		r.ensureFinalizer,
-		r.checkPreconditions,
-		r.executeTask,
-		// r.recordReconcileSuccessOperation,
-	}
+        r.recordTaskReconciliationStartOperation,
+        r.ensureFinalizer,
+        r.moveTaskToPending,
+        r.checkAnySameTypeTaskInProgress,
+        r.checkPreconditions,
+        r.moveTaskToInProgress,
+        r.executeTask,
+        r.recordTaskReconciliationSuccessOperation,
+        r.updateObservedGeneration,
+    }
 
-	for _, step := range reconcileStepFns {
-		ctx.Logger.Info("Executing step", "step", step)
-		result := step(ctx, taskObjKey, executor)
-		if ctrlutils.ShortCircuitReconcileFlow(result) {
-			return result
-		}
-	}
+    for _, step := range reconcileStepFns {
+        ctx.Logger.Info("Executing step", "step", step)
+        result := step(ctx, taskObjKey, executor)
 
-	ctx.Logger.Info("Task execution completed", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
-	return ctrlutils.ReconcileAfter(r.config.RequeueInterval, "Task execution in progress")
+		// Update the status:
+		if err := r.updateTaskStatusFromStep(ctx, taskObjKey, step.name, result); err != nil {
+            ctx.Logger.Error(err, "Failed to update task status")
+            return ctrlutils.ReconcileWithError(err)
+        }
+        
+
+        if ctrlutils.ShortCircuitReconcileFlow(result) {
+            return result
+        }
+    }
+
+    ctx.Logger.Info("Task execution completed", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
+    return ctrlutils.ReconcileAfter(task.Spec.TTLSecondsAfterFinished, "Task completed, waiting for TTL to expire")
 }
 
 func (r *Reconciler) ensureFinalizer(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
