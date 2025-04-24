@@ -41,7 +41,7 @@ We recommend implementing the **EtcdOperatorTask** controller as part of `etcd-d
 ## 4. Controller Design
 
 
-### TaskExecutor Interface
+### OperatorTask Interface
 
 Defines the contract for all task executors:
 
@@ -53,11 +53,11 @@ type TaskExecutionResult struct {
     Completed     bool
 }
 
-// TaskExecutor defines the interface for task execution.
-type TaskExecutor interface {
-    CheckPreconditions(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
-    Execute(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
-    Cleanup(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
+// OperatorTask defines the interface for task execution.
+type OperatorTask interface {
+    CheckPreconditions(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) *TaskExecutionResult
+    Execute(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (complete bool, *TaskExecutionResult, error)
+    Cleanup(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) *TaskExecutionResult
 }
 ```
 
@@ -75,7 +75,7 @@ To improve extensibility and maintainability, the EtcdOperatorTask reconciler us
   ```
 
 ```go 
-func (r *EtcdOperatorTaskReconciler) RegisterTaskExecutor(
+func (r *EtcdOperatorTaskReconciler) RegisterOperatorTask(
     taskType v1alpha1.EtcdOperatorTaskType,
     factory TaskExecutorFactory,
 ) {
@@ -85,9 +85,9 @@ func (r *EtcdOperatorTaskReconciler) RegisterTaskExecutor(
     r.executorRegistry[taskType] = factory
 }
 
-func (r *EtcdOperatorTaskReconciler) createTaskExecutor(
+func (r *EtcdOperatorTaskReconciler) createOperatorTask(
     task *v1alpha1.EtcdOperatorTask,
-) (TaskExecutor, error) {
+) (OperatorTask, error) {
     factory, ok := r.executorRegistry[task.Spec.Type]
     if !ok {
         return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
@@ -98,13 +98,13 @@ func (r *EtcdOperatorTaskReconciler) createTaskExecutor(
 - Executors are registered with the reconciler during setup:
 
   ```go
-  reconciler.RegisterTaskExecutor(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, NewOnDemandSnapshot)
+  reconciler.RegisterOperatorTask(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, NewOnDemandSnapshot)
   ```
 
 - When a task needs to be executed, the reconciler looks up the appropriate factory and instantiates the executor:
 
   ```go
-  executor, err := r.createTaskExecutor(task)
+  executor, err := r.createOperatorTask(task)
   ```
 
 ## 6. Reconciliation Flow
@@ -118,20 +118,20 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req reconcile.Request) (
         return doNotRequeue()
     }
 
-    executor, err := r.createTaskExecutor(task)
+    operatorTask, err := r.createOperatorTask(task)
     if err != nil {
         updateStatusWithError(task, "UnknownTaskType")
         return r.collectGarbage(task)
     }
 
     if isDeletionRequested(task) {
-        return r.triggerTaskDeletionFlow(ctx, logger, taskObjKey, executor)
+        return r.triggerTaskDeletionFlow(ctx, logger, taskObjKey, operatorTask)
     }
     if isTaskCompleted(task) {
         return r.collectGarbage(task)
     }
 
-    return r.reconcileTask(task, executor)
+    return r.reconcileTask(task, operatorTask)
 }
 ```
 
@@ -171,7 +171,7 @@ func (r *Reconciler) triggerTaskDeletionFlow(
     ctx tasks.TaskContext,
     logger logr.Logger,
     taskObjKey client.ObjectKey,
-    executor tasks.TaskExecutor,
+    operatorTask tasks.OperatorTask,
 ) ctrlutils.ReconcileStepResult {
     deletionStepFns := []reconcileFn{
         r.recordTaskDeletionStartOperation,
@@ -180,7 +180,7 @@ func (r *Reconciler) triggerTaskDeletionFlow(
         r.removeTaskFinalizer,
     }
     for _, fn := range deletionStepFns {
-        result := fn(ctx, taskObjKey, executor)
+        result := fn(ctx, taskObjKey, operatorTask)
         if ctrlutils.ShortCircuitReconcileFlow(result) {
             return r.recordTaskIncompleteDeletionOperation(ctx, logger, taskObjKey, result)
         }

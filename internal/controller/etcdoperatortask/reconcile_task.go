@@ -14,7 +14,7 @@ import (
 )
 
 // reconcileTask manages preconditions, execution, and status updates.
-func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
+func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey, operatorTask tasks.OperatorTask) ctrlutils.ReconcileStepResult {
     ctx.Logger.Info("Reconciling task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
     // TODO: pseudocode fort the functions below
 	reconcileStepFns := []reconcileFn{
@@ -31,7 +31,7 @@ func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.Obje
 
     for _, step := range reconcileStepFns {
         ctx.Logger.Info("Executing step", "step", step)
-        result := step(ctx, taskObjKey, executor)
+        result := step(ctx, taskObjKey, operatorTask)
 
 		// Update the status:
 		if err := r.updateTaskStatusFromStep(ctx, taskObjKey, step.name, result); err != nil {
@@ -49,7 +49,7 @@ func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.Obje
     return ctrlutils.ReconcileAfter(task.Spec.TTLSecondsAfterFinished, "Task completed, waiting for TTL to expire")
 }
 
-func (r *Reconciler) ensureFinalizer(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
+func (r *Reconciler) ensureFinalizer(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.OperatorTask) ctrlutils.ReconcileStepResult {
 	ctx.Logger.Info("Ensuring finalizer", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	taskPartialObjMeta := ctrlutils.EmptyEtcdOperatorTaskPartialObjectMetadata()
 	if result := ctrlutils.GetLatestEtcdOperatorTaskPartialObjectMeta(ctx, r.client, taskObjKey, taskPartialObjMeta); ctrlutils.ShortCircuitReconcileFlow(result) {
@@ -78,7 +78,7 @@ func (r *Reconciler) getTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey,
 	return ctrlutils.ContinueReconcile()
 }
 
-func (r *Reconciler) checkPreconditions(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
+func (r *Reconciler) checkPreconditions(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.OperatorTask) ctrlutils.ReconcileStepResult {
 	ctx.Logger.Info("Checking preconditions for task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	task := &v1alpha1.EtcdOperatorTask{}
 	if result := r.getTask(ctx, taskObjKey, task); ctrlutils.ShortCircuitReconcileFlow(result) {
@@ -112,7 +112,7 @@ func (r *Reconciler) checkPreconditions(ctx tasks.TaskContext, taskObjKey client
 func (r *Reconciler) executeTask(
 	ctx tasks.TaskContext,
 	taskObjKey client.ObjectKey,
-	executor tasks.TaskExecutor,
+	operatorTask tasks.OperatorTask,
 ) ctrlutils.ReconcileStepResult {
 
 	task := &v1alpha1.EtcdOperatorTask{}
@@ -121,7 +121,7 @@ func (r *Reconciler) executeTask(
 	}
 	// Call the executor
 	ctx.Logger.Info("Executing task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
-	completed, opStatus, err := executor.Execute(ctx, task)
+	completed, opStatus, err := operatorTask.Execute(ctx, task)
 	if err != nil {
 		ctx.Logger.Error(err, "Task execution failed")
 

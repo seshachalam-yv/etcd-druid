@@ -18,7 +18,7 @@ type OnDemandSnapshot struct {
 	logger logr.Logger
 }
 
-func NewOnDemandSnapshot(client client.Client) TaskExecutor {
+func NewOnDemandSnapshot(client client.Client) OperatorTask {
 	return &OnDemandSnapshot{
 		client: client,
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 // reconcileEtcdOperatorTaskDeletion handles deletion and finalizer cleanup for EtcdOperatorTask.
-func (r *Reconciler) reconcileEtcdOperatorTaskDeletion(ctx tasks.TaskContext, taskExecutor tasks.TaskExecutor, task *druidv1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
+func (r *Reconciler) reconcileEtcdOperatorTaskDeletion(ctx tasks.TaskContext, operatorTask tasks.OperatorTask, task *druidv1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
 
 	if task.DeletionTimestamp == nil {
 		return ctrlutils.ContinueReconcile()
@@ -20,7 +20,7 @@ func (r *Reconciler) reconcileEtcdOperatorTaskDeletion(ctx tasks.TaskContext, ta
 	}
 
 	ctx.Logger.Info("Task marked for deletion, performing cleanup")
-	if err := taskExecutor.Cleanup(ctx, task); err != nil {
+	if err := operatorTask.Cleanup(ctx, task); err != nil {
 		ctx.Logger.Error(err, "Cleanup failed")
 		return ctrlutils.ReconcileWithError(err)
 	}

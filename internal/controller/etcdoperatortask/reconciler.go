@@ -32,7 +32,7 @@ const (
 )
 
 
-type TaskExecutorFactory func(client client.Client, log logr.Logger, task *v1alpha1.EtcdOperatorTask) TaskExecutor
+type TaskExecutorFactory func(client client.Client, log logr.Logger, task *v1alpha1.EtcdOperatorTask) tasks.OperatorTask
 type Reconciler struct {
 	client   client.Client
 	recorder record.EventRecorder
@@ -42,7 +42,7 @@ type Reconciler struct {
 	executorRegistry map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory
 }
 
-type reconcileFn func(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult
+type reconcileFn func(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.OperatorTask) ctrlutils.ReconcileStepResult
 
 func New(mgr ctrl.Manager, cfg *Config, executorFactories map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory) *Reconciler {
 	// registry := tasks.NewTaskExecutorRegistry()
@@ -69,21 +69,21 @@ func New(mgr ctrl.Manager, cfg *Config, executorFactories map[v1alpha1.EtcdOpera
 		executorRegistry: make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory),
 	}
 	for taskType, factory := range executorFactories {
-		reconciler.RegisterTaskExecutor(taskType, factory)
+		reconciler.RegisterOperatorTask(taskType, factory)
 	}
 	
 	return reconciler
 
 }
 
-func (r *Reconciler) RegisterTaskExecutor(taskType v1alpha1.EtcdOperatorTaskType, factory TaskExecutorFactory) {
+func (r *Reconciler) registerOperatorTask(taskType v1alpha1.EtcdOperatorTaskType, factory TaskExecutorFactory) {
     if r.executorRegistry == nil {
         r.executorRegistry = make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory)
     }
     r.executorRegistry[taskType] = factory
 }
 
-func (r *Reconciler) createTaskExecutor(task *v1alpha1.EtcdOperatorTask,) (TaskExecutor, error) {
+func (r *Reconciler) createOperatorTask(task *v1alpha1.EtcdOperatorTask,) (tasks.OperatorTask, error) {
     factory, ok := r.executorRegistry[task.Spec.Type]
     if !ok {
         return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
@@ -113,13 +113,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrlutils.ReconcileWithError(err).ReconcileResult()
 	}
 	// TODO: Replace the below with the  
-	taskExecutor, err := r.createTaskExecutor(task)
+	operatorTask, err := r.createOperatorTask(task)
 	if err != nil {
 		r.logger.Error(err, "Failed to get task executor")
 		return ctrl.Result{}, err
 	}
 
-	if result := r.reconcileEtcdOperatorTaskDeletion(taskCtx, taskExecutor, task); ctrlutils.ShortCircuitReconcileFlow(result) {
+	if result := r.reconcileEtcdOperatorTaskDeletion(taskCtx, operatorTask, task); ctrlutils.ShortCircuitReconcileFlow(result) {
 		return result.ReconcileResult()
 	}
 
@@ -129,7 +129,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 	}
 
-	return r.reconcileTask(taskCtx, client.ObjectKeyFromObject(task), taskExecutor).ReconcileResult()
+	return r.reconcileTask(taskCtx, client.ObjectKeyFromObject(task), operatorTask).ReconcileResult()
 }
 
 // recordReconcileStartOperation records the start of a reconcile operation for the given EtcdOperatorTask.
