@@ -1,10 +1,12 @@
 package etcdoperatortask
 
 import (
+	"context"
 	"time"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
+	"github.com/gardener/etcd-druid/internal/operatortask"
 	"github.com/gardener/etcd-druid/internal/tasks"
 	"github.com/gardener/etcd-druid/internal/utils/kubernetes"
 
@@ -14,49 +16,53 @@ import (
 )
 
 // reconcileTask manages preconditions, execution, and status updates.
-func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
-	ctx.Logger.Info("Reconciling task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
+func (r *Reconciler) reconcileTask(ctx context.Context, taskObjKey client.ObjectKey, operatorTask operatortask.OperatorTask) ctrlutils.ReconcileStepResult {
+	logger := operatorTask.Logger()
+	logger.Info("Reconciling task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	reconcileStepFns := []reconcileFn{
 		// r.recordReconcileStartOperation,
 		r.ensureFinalizer,
-		r.checkPreconditions,
+		r.updateObservedGeneration,
+		r.moveTaskToPending,
+		r.Admit,
+		r.moveTaskToInProgress,
 		r.executeTask,
-		// r.recordReconcileSuccessOperation,
 	}
 
 	for _, step := range reconcileStepFns {
-		ctx.Logger.Info("Executing step", "step", step)
-		result := step(ctx, taskObjKey, executor)
+		logger.Info("Executing step", "step", step)
+		result := step(ctx, taskObjKey, operatorTask)
 		if ctrlutils.ShortCircuitReconcileFlow(result) {
 			return result
 		}
 	}
 
-	ctx.Logger.Info("Task execution completed", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
+	logger.Info("Task execution completed", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	return ctrlutils.ReconcileAfter(r.config.RequeueInterval, "Task execution in progress")
 }
 
-func (r *Reconciler) ensureFinalizer(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
-	ctx.Logger.Info("Ensuring finalizer", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
+func (r *Reconciler) ensureFinalizer(ctx context.Context, taskObjKey client.ObjectKey, operatorTask operatortask.OperatorTask) ctrlutils.ReconcileStepResult {
+	logger := operatorTask.Logger()
+	logger.Info("Ensuring finalizer", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	taskPartialObjMeta := ctrlutils.EmptyEtcdOperatorTaskPartialObjectMetadata()
 	if result := ctrlutils.GetLatestEtcdOperatorTaskPartialObjectMeta(ctx, r.client, taskObjKey, taskPartialObjMeta); ctrlutils.ShortCircuitReconcileFlow(result) {
-		ctx.Logger.Info("While ensuring finalizer, task not found", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name, "error", result.GetCombinedError())
+		logger.Info("While ensuring finalizer, task not found", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name, "error", result.GetCombinedError())
 		return result
 	}
 	if !controllerutil.ContainsFinalizer(taskPartialObjMeta, FinalizerName) {
-		ctx.Logger.Info("Adding finalizer", "finalizerName", FinalizerName)
+		logger.Info("Adding finalizer", "finalizerName", FinalizerName)
 		if err := kubernetes.AddFinalizers(ctx, r.client, taskPartialObjMeta, FinalizerName); err != nil {
-			ctx.Logger.Error(err, "failed to add finalizer")
+			logger.Error(err, "failed to add finalizer")
 			return ctrlutils.ReconcileWithError(err)
 		}
 	}
-	ctx.Logger.Info("Finalizer added", "finalizerName", FinalizerName)
+	logger.Info("Finalizer added", "finalizerName", FinalizerName)
 	return ctrlutils.ContinueReconcile()
 }
 
-func (r *Reconciler) getTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey, task *v1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
+func (r *Reconciler) getTask(ctx context.Context, taskObjKey client.ObjectKey, task *v1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
 
-	if err := r.client.Get(ctx.Context, taskObjKey, task); err != nil {
+	if err := r.client.Get(ctx, taskObjKey, task); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return ctrlutils.DoNotRequeue()
 		}
@@ -65,8 +71,9 @@ func (r *Reconciler) getTask(ctx tasks.TaskContext, taskObjKey client.ObjectKey,
 	return ctrlutils.ContinueReconcile()
 }
 
-func (r *Reconciler) checkPreconditions(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult {
-	ctx.Logger.Info("Checking preconditions for task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
+func (r *Reconciler) admit(ctx context.Context, taskObjKey client.ObjectKey, operatorTask operatortask.OperatorTask) ctrlutils.ReconcileStepResult {
+	logger := operatorTask.Logger()
+	logger.Info("Checking preconditions for task", "namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	task := &v1alpha1.EtcdOperatorTask{}
 	if result := r.getTask(ctx, taskObjKey, task); ctrlutils.ShortCircuitReconcileFlow(result) {
 		return result
@@ -75,24 +82,25 @@ func (r *Reconciler) checkPreconditions(ctx tasks.TaskContext, taskObjKey client
 		return ctrlutils.ContinueReconcile()
 	}
 
-	if err := executor.CheckPreconditions(ctx, task); err != nil {
-		ctx.Logger.Error(err, "Preconditions not met")
-		return ctrlutils.ReconcileWithError(err)
+	result := operatorTask.Admit(ctx)
+	if result.Error != nil {
+		logger.Error(result.Error, "Preconditions not met")
+		return ctrlutils.ReconcileWithError(result.Error)
 	}
 
-	ctx.Logger.Info("Preconditions met, starting task execution")
+	logger.Info("Preconditions met, starting task execution")
 
 	task.Status.State = v1alpha1.TaskStateInProgress
 	task.Status.InitiatedAt = metav1.Now()
 	task.Status.ObservedGeneration = &task.Generation
 
-	if err := r.client.Status().Update(ctx.Context, task); err != nil {
+	if err := r.client.Status().Update(ctx, task); err != nil {
 
-		ctx.Logger.Error(err, "Failed to update status to InProgress")
+		logger.Error(err, "Failed to update status to InProgress")
 		return ctrlutils.ReconcileWithError(err)
 	}
 
-	ctx.Logger.Info("Preconditions met, starting task execution")
+	logger.Info("Preconditions met, starting task execution")
 	return ctrlutils.ContinueReconcile()
 }
 

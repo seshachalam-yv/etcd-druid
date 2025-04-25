@@ -9,19 +9,19 @@ package etcdoperatortask
 
 import (
 	"context"
-	"errors"
-	"time"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
+	"github.com/gardener/etcd-druid/internal/operatortask"
+	"github.com/gardener/etcd-druid/internal/operatortask/ondemandsnapshot"
 	"github.com/gardener/etcd-druid/internal/tasks"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/go-logr/logr"
-	"k8s.io/client-go/tools/record"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -30,25 +30,26 @@ const (
 	FinalizerName  = "etcd-druid.gardener.cloud/etcd-operator-task"
 )
 
+type reconcileFn func(ctx context.Context, taskObjKey client.ObjectKey, operatorTask operatortask.OperatorTask) ctrlutils.ReconcileStepResult
+
 type Reconciler struct {
 	client   client.Client
 	recorder record.EventRecorder
 	logger   logr.Logger
 	config   *Config
-	registry *tasks.TaskExecutorRegistry
+	registry *operatortask.OperatorTaskRegistry
 }
 
-type reconcileFn func(ctx tasks.TaskContext, taskObjKey client.ObjectKey, executor tasks.TaskExecutor) ctrlutils.ReconcileStepResult
-
-func New(mgr ctrl.Manager, cfg *Config) *Reconciler {
-	registry := tasks.NewTaskExecutorRegistry()
-	registry.Register(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, tasks.NewOnDemandSnapshot(mgr.GetClient()))
+func New(mgr manager.Manager, cfg *Config) *Reconciler {
+	registry := operatortask.NewOperatorTaskRegistry()
+	logger := log.Log.WithName(ControllerName)
+	registry.Register(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, ondemandsnapshot.New)
 	// Register more executors as needed
 
 	return &Reconciler{
 		client:   mgr.GetClient(),
 		recorder: mgr.GetEventRecorderFor(ControllerName),
-		logger:   ctrl.Log.WithName(ControllerName),
+		logger:   logger,
 		config:   cfg,
 		registry: registry,
 	}
@@ -62,76 +63,22 @@ func New(mgr ctrl.Manager, cfg *Config) *Reconciler {
 
 // Reconcile implements the main reconciliation loop for EtcdOperatorTask.
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	runID := string(controller.ReconcileIDFromContext(ctx))
-	taskCtx := tasks.NewTaskContext(ctx, r.logger.WithValues("runId", runID), runID)
-
 	task := &v1alpha1.EtcdOperatorTask{}
-	taskCtx.Logger.Info("Fetching task", "namespace", req.Namespace, "name", req.Name)
-	if err := r.client.Get(taskCtx.Context, req.NamespacedName, task); err != nil {
-		if client.IgnoreNotFound(err) == nil {
-			taskCtx.Logger.Info("Task not found, ignoring")
-			return ctrlutils.DoNotRequeue().ReconcileResult()
+	if err := r.client.Get(ctx, req.NamespacedName, task); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return reconcile.Result{}, err
 		}
-		taskCtx.Logger.Error(err, "Failed to fetch task")
-		return ctrlutils.ReconcileWithError(err).ReconcileResult()
+		return reconcile.Result{}, nil
 	}
 
-	taskExecutor, err := r.registry.Get(task.Spec.Type)
+	logger := r.logger.WithValues("runId", string(controller.ReconcileIDFromContext(ctx)))
+	operatorTask, err := r.registry.CreateOperatorTaskInstance(r.client, logger, task)
 	if err != nil {
-		r.logger.Error(err, "Failed to get task executor")
-		return ctrl.Result{}, err
+		return reconcile.Result{}, err
+	}
+	if task.IsCompleted() || task.IsMarkedForDeletion() {
+		return r.triggerDeletionFlow(ctx, operatorTask, task).ReconcileResult()
 	}
 
-	if result := r.reconcileEtcdOperatorTaskDeletion(taskCtx, taskExecutor, task); ctrlutils.ShortCircuitReconcileFlow(result) {
-		return result.ReconcileResult()
-	}
-
-	if task.IsCompleted() {
-		if result := r.GC(taskCtx, task); ctrlutils.ShortCircuitReconcileFlow(result) {
-			return result.ReconcileResult()
-		}
-	}
-
-	return r.reconcileTask(taskCtx, client.ObjectKeyFromObject(task), taskExecutor).ReconcileResult()
-}
-
-// recordReconcileStartOperation records the start of a reconcile operation for the given EtcdOperatorTask.
-func (r *Reconciler) recordReconcileStartOperation(ctx context.Context, task *v1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
-	r.logger.Info("Recording start of reconcile operation", "namespace", task.Namespace, "name", task.Name)
-	// Optionally, update status or add an event here.
-	if r.recorder != nil {
-		r.recorder.Eventf(task, "Normal", "ReconcileStart", "Started reconcile operation for task %s/%s", task.Namespace, task.Name)
-	}
-	return ctrlutils.ContinueReconcile()
-}
-
-func (r *Reconciler) GC(taskCtx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
-	if task.Status.InitiatedAt.IsZero() || task.Spec.TTLSecondsAfterFinished == nil {
-		return ctrlutils.ReconcileWithError(errors.New("TTL not set"))
-	}
-
-	elapsed := time.Since(task.Status.InitiatedAt.Time)
-	if elapsed <= time.Duration(*task.Spec.TTLSecondsAfterFinished)*time.Second {
-		remaining := time.Duration(*task.Spec.TTLSecondsAfterFinished)*time.Second - elapsed
-		if remaining > time.Minute {
-			remaining = time.Minute
-		}
-		return ctrlutils.ReconcileAfter(remaining, "TTL not expired")
-	}
-
-	taskCtx.Logger.Info("TTL expired, ensuring finalizer for deletion")
-	if !controllerutil.ContainsFinalizer(task, FinalizerName) {
-		controllerutil.AddFinalizer(task, FinalizerName)
-		if err := r.client.Update(taskCtx.Context, task); err != nil {
-			taskCtx.Logger.Error(err, "Failed to add finalizer before deletion")
-			return ctrlutils.ReconcileWithError(err)
-		}
-	}
-
-	taskCtx.Logger.Info("Deleting task")
-	if err := r.client.Delete(taskCtx.Context, task); err != nil {
-		taskCtx.Logger.Error(err, "Failed to delete task")
-		return ctrlutils.ReconcileWithError(err)
-	}
-	return ctrlutils.DoNotRequeue()
+	return r.reconcileTask(tasks.TaskContext{Context: ctx, Logger: logger}, client.ObjectKeyFromObject(task), operatorTask).ReconcileResult()
 }

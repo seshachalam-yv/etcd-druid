@@ -1,63 +1,163 @@
 # EtcdOperatorTask Controller Design
 
-## 1. Task Categories
+## Custom Resource Golang API
 
-EtcdOperator tasks are categorized into four main types based on their interaction with etcd and execution requirements:
+`EtcdOperatorTask` is the new custom resource that will be introduced. This API will be in `v1alpha1` version and will be subject to change. We will be respecting [Kubernetes Deprecation Policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
 
-| **Category**                            | **Description**                                                                                | **Examples**                                                                         | **Execution Context**             |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------- |
-| **1. etcd-backup-restore Subcommands**  | Tasks that leverage `etcd-backup-restore` CLI/subcommands, sometimes running an embedded etcd. | Copying/compacting snapshots                                                         | Standalone Kubernetes Jobs.       |
-| **2. etcd-backup-restore Sidecar HTTP** | Tasks that require the sidecar container to handle snapshot creation via HTTP endpoints.       | On-demand full/delta snapshots, Etcd Maintenance ops(Compaction and Defragmentation) | HTTP call to sidecar in etcd Pod. |
-| **3. etcd Client Operations**           | Maintenance tasks issued via `etcdctl` or compatible client libraries.                         | Leadership change, removing member etc                                               | Etcd Client call.                 |
-| **4. Kubernetes API Tasks**             | Tasks that manipulate Kubernetes resources for cluster-wide or disruptive actions.             | Quorum loss recovery, migration, PVC management                                      | Operator using K8s API.           |
+```go
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=etcdoperatortasks,shortName=eot;eots,scope=Namespaced
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Type",JSONPath=".spec.type",type=string
+// +kubebuilder:printcolumn:name="State",JSONPath=".status.state",type=string
+// +kubebuilder:printcolumn:name="Age",JSONPath=".metadata.creationTimestamp",type="date"
+type EtcdOperatorTask struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
 
----
+    Spec   EtcdOperatorTaskSpec   `json:"spec"`
+    
+    Status EtcdOperatorTaskStatus `json:"status,omitempty"`
+}
 
-## 2. Controller Placement: Alternatives
+// +kubebuilder:validation:XPreserveUnknownFields
+// +kubebuilder:validation:Immutable
+type EtcdOperatorTaskSpec struct {
+    // +kubebuilder:validation:Enum=OnDemandSnapshot;Compaction;Defragmentation;QuorumRecovery
+    // +kubebuilder:validation:Required
+    // +kubebuilder:default=OnDemandSnapshot
+    // +kubebuilder:validation:Immutable
+    Type v1alpha1.EtcdOperatorTaskType `json:"type"`
 
-We propose creating a new controller (and reconciler) for handling out-of-band etcd task operations. The controller follows a multi-step reconciliation flow similar to the existing etcd controller:
-There are two potential options for the **operator task controller**:
-- Running the operator task controller inside the leading etcd-backup-restore container. It would watch for events related to specific (or all) task types.
-- Running the operator task controller inside etcd-druid, watching for events related to specific (or all) task types.
+    // Config is task-specific key/value parameters.
+    // +optional
+    Config runtime.RawExtension `json:"config,omitempty"` 
 
-| **Task Type**                                      | **etcd-backup-restore (Leader) Operator Controller**                                                                                           | **etcd-druid Operator Controller**                                             |                                             |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------- |
-| **Type 1: Compaction**                             | N <br> (Not ideal because compaction starts an embedded etcd)                                                                                  | Y – Triggered as a Kubernetes Job using `etcdbrctl compact`                    |                                             |
-| **Type 1: Copy**                                   | Y – Invokes internal APIs to perform copy                                                                                                      | Y – Executes as a Kubernetes Job using `etcdbrctl copy`                        |                                             |
-| **Type 2: Full/Delta Snapshots , Maintenance Ops** | Y – Invokes internal APIs                                                                                                                      | Y – Uses an HTTPS client to communicate with the etcd-backup-restore container |                                             |
-| **Type 3/4: Etcd Migrations**                      | N – Not applicable because etcd-backup-restore itself is not running and we prefer not to create k8s client from backup-restore for migrations | Y – Managed via etcd and Kubernetes client operations                          |                                             |
-| **Type 4: Quorum Recovery**                        | N – No leader exists for quorum recovery                                                                                                       | Y – Handled through direct interactions with the Kubernetes API                |                                             |
+    // TTLSecondsAfterFinished controls how long the status+pod stays around.
+    // +optional
+    // +kubebuilder:validation:Minimum=0
+    TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`
 
----
-
-## 3. Recommended Architecture
-
-We recommend implementing the **EtcdOperatorTask** controller as part of `etcd-druid`:
-- All tasks are feasible from etcd-druid, avoiding the need for multiple controllers.
-- If a task requires the `etcd-backup-restore` container, etcd-druid can coordinate via HTTP endpoints, ensuring no conflicts with scheduled operations.
-
----
-
-## 4. Controller Design
+    // EtcdReference points at the Etcd CR for which this task runs.
+    // +kubebuilder:validation:Required
+    // +kubebuilder:validation:Immutable
+    EtcdReference types.NamespacedName `json:"etcdReference"`
 
 
-### TaskExecutor Interface
+}
+```
+
+#### Status
+
+The authors propose the following fields for the Status (current state) of the `EtcdOperatorTask` custom resource to monitor the progress of the task.
+
+```go
+// EtcdOperatorTaskStatus is the status for a EtcdOperatorTask resource.
+type EtcdOperatorTaskStatus struct {
+  // ObservedGeneration is the most recent generation observed for the resource.
+  ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+  // State is the last known state of the task.
+  State TaskState `json:"state"`
+  // Time at which the task has moved from "pending" state to any other state.
+  InitiatedAt metav1.Time `json:"initiatedAt"`
+  // LastError represents the errors when processing the task.
+  // +optional
+  LastErrors []LastError `json:"lastErrors,omitempty"`
+  // Captures the last operation status if task involves many stages.
+  // +optional
+  LastOperation *LastOperation `json:"lastOperation,omitempty"`
+}
+
+type LastOperation struct {
+  // Status of the last operation, one of pending, progress, completed, failed.
+  State OperationState `json:"state"`
+  // LastTransitionTime is the time at which the operation state last transitioned from one state to another.
+  LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+  // A human readable message indicating details about the last operation.
+  Description string `json:"description"`
+}
+
+// LastError stores details of the most recent error encountered for the task.
+type LastError struct {
+  // Code is an error code that uniquely identifies an error.
+  Code ErrorCode `json:"code"`
+  // Description is a human-readable message indicating details of the error.
+  Description string `json:"description"`
+  // ObservedAt is the time at which the error was observed.
+  ObservedAt metav1.Time `json:"observedAt"`
+}
+
+// TaskState represents the state of the task.
+type TaskState string
+
+const (
+  TaskStateFailed TaskState = "Failed"
+  TaskStatePending TaskState = "Pending"
+  TaskStateRejected TaskState = "Rejected"
+  TaskStateSucceeded TaskState = "Succeeded"
+  TaskStateInProgress TaskState = "InProgress"
+)
+
+// OperationState represents the state of last operation.
+type OperationState string
+
+const (
+  OperationStateInProgress OperationState = "InProgress"
+  OperationStateCompleted OperationState = "Completed"
+  OperationStateFailed OperationState = "Failed"
+)
+```
+
+### Custom Resource YAML API
+
+```yaml
+apiVersion: druid.gardener.cloud/v1alpha1
+kind: EtcdOperatorTask
+metadata:
+    name: <name of operator task resource>
+    namespace: <cluster namespace>
+    generation: <specific generation of the desired state>
+spec:
+    type: <type/category of supported out-of-band task>
+    ttlSecondsAfterFinished: <time-to-live to garbage collect the custom resource after it has been completed>
+    config: <task specific configuration>
+    ownerEtcdRefrence: <refer to corresponding etcd owner name and namespace for which task has been invoked>
+status:
+    observedGeneration: <specific observedGeneration of the resource>
+    state: <last known current state of the out-of-band task>
+    initiatedAt: <time at which task move to any other state from "pending" state>
+    lastErrors:
+    - code: <error-code>
+      description: <description of the error>
+      observedAt: <time the error was observed>
+    lastOperation:
+      name: <operation-name>
+      state: <task state as seen at the completion of last operation>
+      lastTransitionTime: <time of transition to this state>
+      reason: <reason/message if any>
+```
+
+## OperatorTask Interface
 
 Defines the contract for all task executors:
 
 ```go
-type TaskExecutionResult struct {
-    LastOperation *v1alpha1.EtcdOperatorLastOperation
-    LastError     *v1alpha1.EtcdOperatorLastError
-    RequeueAfter  time.Duration // 0 if no requeue needed
-    Completed     bool
+type TaskResult struct {
+    Description string
+    Error error
+    RequeueAfter  time.Duration // Duration to requeue the task
+    Completed bool
 }
 
-// TaskExecutor defines the interface for task execution.
-type TaskExecutor interface {
-    CheckPreconditions(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
-    Execute(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
-    Cleanup(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*TaskExecutionResult, error)
+// OperatorTask defines the interface for task execution.
+type OperatorTask interface {
+    EtcdReference types.NamespacedName
+    Name string
+    config runtime.RawExtension
+    // Checks if the task is permitted to run. This is a one-time gate; once passed, it is not checked again for the same task execution.
+    Admit(ctx context.Context) *TaskResult  
+    Run(ctx context.Context) *TaskResult
+    Cleanup(ctx context.Context) *TaskResult
 }
 ```
 
@@ -67,45 +167,45 @@ type TaskExecutor interface {
 
 To improve extensibility and maintainability, the EtcdOperatorTask reconciler uses an executor registration pattern. Instead of hardcoding executor creation logic in a switch statement, the reconciler maintains an internal registry mapping task types to executor factory functions.
 
-### How it Works
-- The reconciler struct contains a field:
+```go
+// TaskExecutorFactory builds an OperatorTask given client, logger, and the Task.
+type TaskExecutorFactory func(client.Client, logr.Logger) OperatorTask
 
-  ```go
-  executorRegistry map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory
-  ```
-
-```go 
-func (r *EtcdOperatorTaskReconciler) RegisterTaskExecutor(
-    taskType v1alpha1.EtcdOperatorTaskType,
+func (r *EtcdOperatorTaskReconciler) RegisterOperatorTask(
+    t v1alpha1.EtcdOperatorTaskType,
     factory TaskExecutorFactory,
 ) {
-    if r.executorRegistry == nil {
-        r.executorRegistry = make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory)
-    }
-    r.executorRegistry[taskType] = factory
+    r.executorRegistry[t] = factory
 }
 
-func (r *EtcdOperatorTaskReconciler) createTaskExecutor(
+func (r *EtcdOperatorTaskReconciler) getExecutor(
     task *v1alpha1.EtcdOperatorTask,
-) (TaskExecutor, error) {
+) (OperatorTask, error) {
     factory, ok := r.executorRegistry[task.Spec.Type]
     if !ok {
-        return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
+        return nil, fmt.Errorf("unsupported task type %q", task.Spec.Type)
     }
-    return factory(r.Client, r.Log, task), nil
+    return factory(r.Client, r.Log.WithValues("type", task.Spec.Type)), nil
 }
 ```
-- Executors are registered with the reconciler during setup:
 
-  ```go
-  reconciler.RegisterTaskExecutor(v1alpha1.EtcdOperatorTaskTypeOnDemandSnapshot, NewOnDemandSnapshot)
-  ```
-
-- When a task needs to be executed, the reconciler looks up the appropriate factory and instantiates the executor:
-
-  ```go
-  executor, err := r.createTaskExecutor(task)
-  ```
+```go
+// NewReconciler constructs the controller and registers all built-in executors.
+func NewReconciler(mgr ctrl.Manager) *EtcdOperatorTaskReconciler {
+    r := &EtcdOperatorTaskReconciler{
+        Client:           mgr.GetClient(),
+        Log:              ctrl.Log.WithName("etcdoperatortask"),
+        executorRegistry: make(map[v1alpha1.EtcdOperatorTaskType]TaskExecutorFactory),
+        metrics:          metrics.NewTaskMetrics(),
+    }
+    // register executors
+    r.RegisterOperatorTask(v1alpha1.TypeOnDemandSnapshot, NewOnDemandSnapshotExecutor)
+    r.RegisterOperatorTask(v1alpha1.TypeCompactionJob,   NewCompactionJobExecutor)
+    r.RegisterOperatorTask(v1alpha1.TypeDefragmentation, NewDefragExecutor)
+    r.RegisterOperatorTask(v1alpha1.TypeQuorumRecovery,  NewQuorumRecoveryExecutor)
+    return r
+}
+```
 
 ## 6. Reconciliation Flow
 
@@ -118,22 +218,19 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req reconcile.Request) (
         return doNotRequeue()
     }
 
-    executor, err := r.createTaskExecutor(task)
+    operatorTask, err := r.createOperatorTask(task)
     if err != nil {
-        updateStatusWithError(task, "UnknownTaskType")
-        return r.collectGarbage(task)
+        return r.UpdateStatusRejected(task, err)
     }
 
-    if isDeletionRequested(task) {
-        return r.triggerTaskDeletionFlow(ctx, logger, taskObjKey, executor)
-    }
-    if isTaskCompleted(task) {
-        return r.collectGarbage(task)
+    if task.IsCompleted() || task.IsMarkedForDeletion() {
+        return r.triggerTaskDeletionFlow(ctx, logger, taskObjKey, operatorTask)
     }
 
-    return r.reconcileTask(task, executor)
+    return r.reconcileTask(task, operatorTask)
 }
 ```
+> [!NOTE] Invalid Config: Set State: Rejected
 
 ```go
 // reconcileTask manages preconditions, execution, and status updates.
@@ -143,12 +240,10 @@ func (r *Reconciler) reconcileTask(ctx tasks.TaskContext, taskObjKey client.Obje
         r.recordTaskReconciliationStartOperation,
         r.ensureFinalizer,
         r.moveTaskToPending,
-        r.checkAnySameTypeTaskInProgress,
+        r.updateObservedGeneration,
         r.checkPreconditions,
         r.moveTaskToInProgress,
         r.executeTask,
-        r.recordTaskReconciliationSuccessOperation,
-        r.updateObservedGeneration,
     }
 
     for _, step := range reconcileStepFns {
@@ -171,16 +266,23 @@ func (r *Reconciler) triggerTaskDeletionFlow(
     ctx tasks.TaskContext,
     logger logr.Logger,
     taskObjKey client.ObjectKey,
-    executor tasks.TaskExecutor,
+    operatorTask tasks.OperatorTask,
 ) ctrlutils.ReconcileStepResult {
+    if task.IsCompleted() && !task.IsMarkedForDeletion() {
+        if !task.TTLHasExpired() {
+            return ctrlutils.ReconcileAfter(task.Spec.TTLSecondsAfterFinished, "Task completed, waiting for TTL to expire")
+        }
+    }
+
     deletionStepFns := []reconcileFn{
         r.recordTaskDeletionStartOperation,
         r.cleanupTaskResources,
         r.recordTaskDeletionSuccessOperation,
         r.removeTaskFinalizer,
+        r.revmoveTaskIfRequired,
     }
     for _, fn := range deletionStepFns {
-        result := fn(ctx, taskObjKey, executor)
+        result := fn(ctx, taskObjKey, operatorTask)
         if ctrlutils.ShortCircuitReconcileFlow(result) {
             return r.recordTaskIncompleteDeletionOperation(ctx, logger, taskObjKey, result)
         }
@@ -189,44 +291,200 @@ func (r *Reconciler) triggerTaskDeletionFlow(
 }
 ```
 
+## Metrics
 ```go
-type SnapshotExecutor struct {
-	k8sClient   client.Client
-	httpClient  *http.Client
-	log         logr.Logger
+// MetricsExecutor wraps an OperatorTask with metrics collection
+type MetricsExecutor struct {
+    wrapped  OperatorTask
+    taskType string
 }
 
-func NewSnapshotExecutor(k8sClient client.Client, log logr.Logger) TaskExecutor {
+// WithMetrics creates a new MetricsExecutor
+func WithMetrics(wrapped OperatorTask, taskType string) OperatorTask {
+    return &MetricsExecutor{
+        wrapped:  wrapped,
+        taskType: taskType,
+    }
+}
+
+// PermitExecution proxies the call and collects metrics
+func (m *MetricsExecutor) PermitExecution(ctx context.Context, task *v1alpha1.EtcdOperatorTask) *TaskExecutionResult {
+    startTime := time.Now()
+    result := m.wrapped.PermitExecution(ctx, task)
+    duration := time.Since(startTime).Seconds()
+
+    // Record duration
+    taskDuration.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace, string(*result.State)).Observe(duration)
+
+    // Record errors if any
+    if result.LastError != nil {
+        errorTypes.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace, result.LastError.Code).Inc()
+    }
+
+    return result
+}
+
+// Run proxies the call and collects metrics
+func (m *MetricsExecutor) Run(ctx context.Context, task *v1alpha1.EtcdOperatorTask) *TaskExecutionResult {
+    startTime := time.Now()
+    tasksInProgress.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace).Inc()
+    defer tasksInProgress.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace).Dec()
+
+    result := m.wrapped.Run(ctx, task)
+    duration := time.Since(startTime).Seconds()
+
+    // Record duration
+    taskDuration.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace, string(*result.State)).Observe(duration)
+
+    // Update success/failure/rejection counters
+    switch *result.State {
+    case TaskStateSucceeded:
+        taskSuccessTotal.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace).Inc()
+    case TaskStateFailed:
+        taskFailureTotal.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace).Inc()
+    case TaskStateRejected:
+        taskRejectionTotal.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace).Inc()
+    }
+
+    // Record errors if any
+    if result.LastError != nil {
+        errorTypes.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace, result.LastError.Code).Inc()
+    }
+
+    return result
+}
+
+// Cleanup proxies the call and collects metrics
+func (m *MetricsExecutor) Cleanup(ctx context.Context, task *v1alpha1.EtcdOperatorTask) *TaskExecutionResult {
+    startTime := time.Now()
+    result := m.wrapped.Cleanup(ctx, task)
+    duration := time.Since(startTime).Seconds()
+
+    // Record duration
+    taskDuration.WithLabelValues(m.taskType, task.Spec.OwnerEtcdRefrence.Name, task.Namespace, string(*result.State)).Observe(duration)
+
+    return result
+}
+```
+
+```go
+var (
+    taskDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "etcd_operator_task_duration_seconds",
+            Help:    "Duration of EtcdOperatorTask execution",
+            Buckets: prometheus.DefBuckets,
+        },
+        []string{"task_type", "etcd_name", "namespace", "state"},
+    )
+    taskSuccessTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "etcd_operator_task_success_total",
+            Help: "Total number of successful EtcdOperatorTasks",
+        },
+        []string{"task_type", "etcd_name", "namespace"},
+    )
+    taskFailureTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "etcd_operator_task_failure_total",
+            Help: "Total number of failed EtcdOperatorTasks",
+        },
+        []string{"task_type", "etcd_name", "namespace"},
+    )
+    taskRejectionTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "etcd_operator_task_rejection_total",
+            Help: "Total number of rejected EtcdOperatorTasks",
+        },
+        []string{"task_type", "etcd_name", "namespace"},
+    )
+    tasksInProgress = prometheus.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "etcd_operator_tasks_in_progress",
+            Help: "Number of EtcdOperatorTasks currently in progress",
+        },
+        []string{"task_type", "etcd_name", "namespace"},
+    )
+)
+```
+
+```go
+func (r *EtcdOperatorTaskReconciler) createOperatorTask(task *v1alpha1.EtcdOperatorTask) (OperatorTask, error) {
+    factory, ok := r.executorRegistry[task.Spec.Type]
+    if !ok {
+        return nil, fmt.Errorf("unsupported task type: %s", task.Spec.Type)
+    }
+    // Wrap the executor with metrics
+    return WithMetrics(factory(r.Client, r.Log, task), task.Spec.Type), nil
+}
+```
+
+## Example Task Executor
+```go
+type snapshotExecutor struct {
+	k8sClient  client.Client
+	httpClient *http.Client
+	log        logr.Logger
+}
+
+func NewSnapshotExecutor(k8sClient client.Client, log logr.Logger, task) OperatorTask {
 	return &SnapshotExecutor{
 		k8sClient:  k8sClient,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		log:        log.WithName("snapshot-exec"),
+
 	}
 }
 
-func (e *SnapshotExecutor) CheckPreconditions(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*tasks.TaskExecutionResult, error) {
-	// 1. Make sure etcd StatefulSet has a Ready pod
-	podIP, err := e.firstReadyEtcdPodIP(ctx, task.Spec.EtcdRef.Name, task.Namespace)
-	if err != nil {
-		e.log.Info("no ready pod yet → requeue", "err", err)
-		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhasePending, RequeueAfter: 20 * time.Second}, nil
-	}
-	// 2. Quick TCP probe to sidecar port
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(podIP, "8080"), 2*time.Second)
-	if err != nil {
-		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhasePending, RequeueAfter: 15 * time.Second}, nil
-	}
-	_ = conn.Close()
-	return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseRunning}, nil
+func (e *SnapshotExecutor) Admit(ctx context.Context, task *v1alpha1.EtcdOperatorTask) *TaskResult {
+    // 1. Fetch Etcd CR
+    var etcd druidv1alpha1.Etcd
+    if err := e.k8sClient.Get(ctx, types.NamespacedName{
+        Name:      task.Spec.OwnerEtcdRefrence.Name,
+        Namespace: task.Namespace,
+    }, &etcd); err != nil {
+        e.log.Info("Failed to fetch Etcd CR", "err", err)
+        return &TaskExecutionResult{
+            State:       ptr(TaskStatePending),
+            LastError:   &v1alpha1.EtcdOperatorTaskLastError{Description: err.Error()},
+            RequeueAfter: 10 * time.Second,
+        }
+    }
+
+    // 2. Check Etcd CR readiness (using .Ready or .Conditions)
+    ready := false
+    for _, cond := range etcd.Status.Conditions {
+        if cond.Type == "Ready" && cond.Status == corev1.ConditionTrue {
+            ready = true
+            break
+        }
+    }
+    if !ready {
+        e.log.Info("Etcd CR not ready, will retry")
+        return &TaskExecutionResult{
+            State:       ptr(TaskStatePending),
+            LastError:   &v1alpha1.EtcdOperatorTaskLastError{Description: "Etcd CR not ready"},
+            RequeueAfter: 15 * time.Second,
+        }
+    }
+
+    return &TaskExecutionResult{
+        State: ptr(TaskStateInProgress),
+    }
 }
 
-func (e *SnapshotExecutor) Execute(ctx tasks.TaskContext, task *v1alpha1.EtcdOperatorTask) (*tasks.TaskExecutionResult, error) {
-	podIP, _ := e.firstReadyEtcdPodIP(ctx, task.Spec.EtcdRef.Name, task.Namespace)
+func (e *SnapshotExecutor) Run(ctx context.Context, task *v1alpha1.EtcdOperatorTask) *TaskExecutionResult {
+	podIP, err := e.firstReadyEtcdPodIP(ctx, task.Spec.OwnerEtcdRefrence.Name, task.Namespace)
+	if err != nil {
+		return &TaskExecutionResult{
+			State:       ptr(TaskStatePending),
+			LastError:   &v1alpha1.EtcdOperatorTaskLastError{Description: err.Error()},
+			RequeueAfter: 20 * time.Second,
+		}
+	}
 
-	var (
-		snapType      string = "full"
-		timeout       = 30 * time.Second
-	)
+	snapType := "full"
+	timeout := 30 * time.Second
 	if t, ok := task.Spec.Config["snapshotType"].(string); ok && t == "Delta" {
 		snapType = "delta"
 	}
@@ -236,49 +494,47 @@ func (e *SnapshotExecutor) Execute(ctx tasks.TaskContext, task *v1alpha1.EtcdOpe
 
 	url := fmt.Sprintf("http://%s/snapshot/%s", podIP, snapType)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
-	e.log.Info("trigger snapshot", "url", url)
+	e.log.Info("Triggering snapshot", "url", url)
 
 	e.httpClient.Timeout = timeout
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseFailed}, errors.Wrap(err, "HTTP call failed")
+		return &TaskExecutionResult{
+			State:       ptr(TaskStateInProgress),
+			LastError:   &v1alpha1.EtcdOperatorTaskLastError{Description: fmt.Sprintf("HTTP call failed: %v", err)},
+			RequeueAfter: 15 * time.Second,
+		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseFailed},
-			fmt.Errorf("sidecar returned %d", resp.StatusCode)
+		return &TaskExecutionResult{
+			State:       ptr(TaskStateFailed),
+			LastError:   &v1alpha1.EtcdOperatorTaskLastError{Description: fmt.Sprintf("sidecar returned %d", resp.StatusCode)},
+		}
 	}
 
-	op := &druidv1a1.EtcdOperatorLastOperation{
+	op := &v1alpha1.EtcdOperatorTaskLastOperation{
 		Description: fmt.Sprintf("%s snapshot triggered", snapType),
 		LastUpdateTime: metav1.Now(),
 	}
 
-	return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseSucceeded, LastOp: op}, nil
-}
-
-func (e *SnapshotExecutor) Cleanup(ctx  tasks.TaskContext, _ *v1alpha1.EtcdOperatorTask) (*tasks.TaskExecutionResult, error) {
-    // no-op
-	return &tasks.TaskExecutionResult{Phase: tasks.TaskPhaseSucceeded}, nil
-}
-
-// ----------------- helpers -----------------
-
-func (e *SnapshotExecutor) firstReadyEtcdPodIP(ctx  tasks.TaskContext, etcdName, ns string) (string, error) {
-	var podList corev1.PodList
-	if err := e.k8sClient.List(ctx, &podList,
-		client.InNamespace(ns),
-		client.MatchingLabels{"app": "etcd", "instance": etcdName}); err != nil {
-		return "", err
+	return &TaskExecutionResult{
+		State:        ptr(TaskStateSucceeded),
+		LastOperation: op,
 	}
-	for _, p := range podList.Items {
-		if cond := getPodReadyCondition(p.Status); cond != nil && cond.Status == corev1.ConditionTrue {
-			return p.Status.PodIP, nil
-		}
-	}
-	return "", fmt.Errorf("no Ready etcd pods found")
 }
+
+func (e *SnapshotExecutor) Cleanup(ctx context.Context, task *v1alpha1.EtcdOperatorTask) *TaskExecutionResult {
+	// No-op for snapshot tasks
+	return &TaskExecutionResult{
+		State: ptr(TaskStateSucceeded),
+	}
+}
+
+// ptr is a helper to take a pointer to a value (for State)
+func ptr[T any](v T) *T { return &v }
+```
 
 
 ### Registering a New Task Executor

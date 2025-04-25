@@ -1,0 +1,150 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: etcdoperatortasks.druid.gardener.cloud
+spec:
+  group: druid.gardener.cloud
+  names:
+    kind: EtcdOperatorTask
+    listKind: EtcdOperatorTaskList
+    plural: etcdoperatortasks
+    singular: etcdoperatortask
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: EtcdOperatorTask represents an out-of-band operator task resource.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec is the specification of the EtcdOperatorTask resource.
+            properties:
+              config:
+                description: Config is a task-specific configuration.
+                type: string
+              etcdRef:
+                description: |-
+                  OwnerEtcdReference refers to the name and namespace of the corresponding
+                  Etcd owner for which the task has been invoked.
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              ttlSecondsAfterFinished:
+                description: |-
+                  TTLSecondsAfterFinished is the time-to-live to garbage collect the
+                  related resource(s) of the task once it has been completed.
+                format: int32
+                type: integer
+              type:
+                description: Type specifies the type of out-of-band operator task
+                  to be performed.
+                type: string
+            required:
+            - etcdRef
+            - type
+            type: object
+          status:
+            description: Status is most recently observed status of the EtcdOperatorTask
+              resource.
+            properties:
+              initiatedAt:
+                description: InitiatedAt is the time at which the task has moved from
+                  "pending" state to any other state.
+                format: date-time
+                type: string
+              lastErrors:
+                description: LastErrors represents the errors when processing the
+                  task.
+                items:
+                  description: LastError stores details of the most recent error encountered
+                    for the task.
+                  properties:
+                    code:
+                      description: Code is an error code that uniquely identifies
+                        an error.
+                      type: string
+                    description:
+                      description: Description is a human-readable message indicating
+                        details of the error.
+                      type: string
+                    observedAt:
+                      description: ObservedAt is the time at which the error was observed.
+                      format: date-time
+                      type: string
+                  required:
+                  - code
+                  - description
+                  - observedAt
+                  type: object
+                type: array
+              lastOperation:
+                description: Captures the last operation status if task involves many
+                  stages.
+                properties:
+                  description:
+                    description: A human readable message indicating details about
+                      the last operation.
+                    type: string
+                  lastTransitionTime:
+                    description: LastTransitionTime is the time at which the operation
+                      state last transitioned from one state to another.
+                    format: date-time
+                    type: string
+                  state:
+                    description: Status of the last operation, one of pending, progress,
+                      completed, failed.
+                    type: string
+                required:
+                - description
+                - lastTransitionTime
+                - state
+                type: object
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  for the resource.
+                format: int64
+                type: integer
+              state:
+                description: State is the last known state of the task.
+                type: string
+            required:
+            - initiatedAt
+            - state
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

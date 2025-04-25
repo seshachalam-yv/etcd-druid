@@ -211,6 +211,7 @@ ErrorCode is a string alias representing an error code that identifies an error.
 
 
 _Appears in:_
+- [EtcdOperatorTaskLastError](#etcdoperatortasklasterror)
 - [LastError](#lasterror)
 
 
@@ -364,7 +365,7 @@ _Appears in:_
 
 
 
-EtcdOperatorLastOperation stores details of the most recent operation for the task.
+
 
 
 
@@ -373,10 +374,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `name` _string_ | Name of the EtcdOperatorLastOperation. |  |  |
-| `state` _[OperationState](#operationstate)_ | State of the last operation, one of pending, progress, completed, failed. |  |  |
+| `state` _[OperationState](#operationstate)_ | Status of the last operation, one of pending, progress, completed, failed. |  |  |
 | `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | LastTransitionTime is the time at which the operation state last transitioned from one state to another. |  |  |
-| `reason` _string_ | Reason is a human-readable message indicating details about the last operation. |  |  |
+| `description` _string_ | A human readable message indicating details about the last operation. |  |  |
 
 
 #### EtcdOperatorTask
@@ -402,7 +402,7 @@ EtcdOperatorTask represents an out-of-band operator task resource.
 
 
 
-EtcdOperatorTaskLastError stores details of the most recent error encountered for the task.
+LastError stores details of the most recent error encountered for the task.
 
 
 
@@ -411,7 +411,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `code` _string_ | Code is an error code that uniquely identifies an error. |  |  |
+| `code` _[ErrorCode](#errorcode)_ | Code is an error code that uniquely identifies an error. |  |  |
 | `description` _string_ | Description is a human-readable message indicating details of the error. |  |  |
 | `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | ObservedAt is the time at which the error was observed. |  |  |
 
@@ -452,7 +452,7 @@ _Appears in:_
 | `state` _[TaskState](#taskstate)_ | State is the last known state of the task. |  |  |
 | `initiatedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | InitiatedAt is the time at which the task has moved from "pending" state to any other state. |  |  |
 | `lastErrors` _[EtcdOperatorTaskLastError](#etcdoperatortasklasterror) array_ | LastErrors represents the errors when processing the task. |  |  |
-| `lastOperation` _[EtcdOperatorLastOperation](#etcdoperatorlastoperation)_ | LastOperation captures the last operation status if the task involves many stages. |  |  |
+| `lastOperation` _[EtcdOperatorLastOperation](#etcdoperatorlastoperation)_ | Captures the last operation status if task involves many stages. |  |  |
 
 
 #### EtcdOperatorTaskType
@@ -683,11 +683,13 @@ _Appears in:_
 | `extensive` | Extensive is a constant for metrics level extensive.<br /> |
 
 
+
+
 #### OperationState
 
 _Underlying type:_ _string_
 
-OperationState represents the state of the last operation.
+
 
 
 
@@ -696,10 +698,9 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `Failed` |  |
-| `Pending` |  |
-| `Completed` |  |
 | `InProgress` |  |
+| `Completed` |  |
+| `Failed` |  |
 
 
 #### SchedulingConstraints
