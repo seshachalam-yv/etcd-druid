@@ -95,6 +95,19 @@ rules:
   - patch
   - create
 - apiGroups:
+  - druid.gardener.cloud
+  resources:
+  - etcdoperatortasks
+  - etcdoperatortasks/status
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases

@@ -8,7 +8,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type OperatorTaskFactory func(client.Client, logr.Logger, *v1alpha1.EtcdOperatorTask) OperatorTask
 type OperatorTaskRegistry struct {
 	tasks map[v1alpha1.EtcdOperatorTaskType]OperatorTaskFactory
 }
@@ -26,5 +25,6 @@ func (r *OperatorTaskRegistry) CreateOperatorTaskInstance(client client.Client, 
 	if !ok {
 		return nil, fmt.Errorf("no operator task registered for task type %s", task.Spec.Type)
 	}
-	return factory(client, logger, task), nil
+	instance, err := factory(client, logger, task)
+	return instance, err
 }

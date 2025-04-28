@@ -1,0 +1,484 @@
+diff --git a/api/core/v1alpha1/etcdoperatortask.go b/api/core/v1alpha1/etcdoperatortask.go
+new file mode 100644
+index 00000000..dd1db26b
+--- /dev/null
++++ b/api/core/v1alpha1/etcdoperatortask.go
+@@ -0,0 +1,119 @@
++// SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and Gardener contributors
++//
++// SPDX-License-Identifier: Apache-2.0
++
++package v1alpha1
++
++import (
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++)
++
++// +genclient
++// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
++// +kubebuilder:object:root=true
++// +kubebuilder:subresource:status
++// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
++
++// EtcdOperatorTask represents an out-of-band operator task resource.
++type EtcdOperatorTask struct {
++	metav1.TypeMeta   `json:",inline"`
++	metav1.ObjectMeta `json:"metadata,omitempty"`
++
++	// Spec is the specification of the EtcdOperatorTask resource.
++	Spec EtcdOperatorTaskSpec `json:"spec"`
++	// Status is most recently observed status of the EtcdOperatorTask resource.
++	Status EtcdOperatorTaskStatus `json:"status,omitempty"`
++}
++
++// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
++// +kubebuilder:object:root=true
++
++// EtcdOperatorTaskList contains a list of EtcdOperatorTask objects.
++type EtcdOperatorTaskList struct {
++	metav1.TypeMeta `json:",inline"`
++	metav1.ListMeta `json:"metadata,omitempty"`
++	Items           []EtcdOperatorTask `json:"items"`
++}
++
++// EtcdOperatorTaskSpec is the spec for an EtcdOperatorTask resource.
++type EtcdOperatorTaskSpec struct {
++	// Type specifies the type of out-of-band operator task to be performed.
++	Type string `json:"type"`
++
++	// Config is a task-specific configuration.
++	Config string `json:"config,omitempty"`
++
++	// TTLSecondsAfterFinished is the time-to-live to garbage collect the
++	// related resource(s) of the task once it has been completed.
++	// +optional
++	TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`
++
++	// OwnerEtcdReference refers to the name and namespace of the corresponding
++	// Etcd owner for which the task has been invoked.
++	EtcdRef *EtcdReference `json:"etcdRef"`
++}
++
++// EtcdReference is a custom struct to hold the name and namespace of the Etcd owner.
++type EtcdReference struct {
++	Namespace string `json:"namespace"`
++	Name      string `json:"name"`
++}
++
++// EtcdOperatorTaskStatus is the status for an EtcdOperatorTask resource.
++type EtcdOperatorTaskStatus struct {
++	// ObservedGeneration is the most recent generation observed for the resource.
++	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
++	// State is the last known state of the task.
++	State TaskState `json:"state"`
++	// InitiatedAt is the time at which the task has moved from "pending" state to any other state.
++	InitiatedAt metav1.Time `json:"initiatedAt"`
++	// LastErrors represents the errors when processing the task.
++	// +optional
++	LastErrors []EtcdOperatorTaskLastError `json:"lastErrors,omitempty"`
++	// LastOperation captures the last operation status if the task involves many stages.
++	// +optional
++	LastOperation *EtcdOperatorLastOperation `json:"lastOperation,omitempty"`
++}
++
++// EtcdOperatorLastOperation stores details of the most recent operation for the task.
++type EtcdOperatorLastOperation struct {
++	// Name of the EtcdOperatorLastOperation.
++	Name string `json:"name"`
++	// State of the last operation, one of pending, progress, completed, failed.
++	State OperationState `json:"state"`
++	// LastTransitionTime is the time at which the operation state last transitioned from one state to another.
++	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
++	// Reason is a human-readable message indicating details about the last operation.
++	Reason string `json:"reason"`
++}
++
++// EtcdOperatorTaskLastError stores details of the most recent error encountered for the task.
++type EtcdOperatorTaskLastError struct {
++	// Code is an error code that uniquely identifies an error.
++	Code string `json:"code"`
++	// Description is a human-readable message indicating details of the error.
++	Description string `json:"description"`
++	// ObservedAt is the time at which the error was observed.
++	ObservedAt metav1.Time `json:"observedAt"`
++}
++
++// TaskState represents the state of the task.
++type TaskState string
++
++const (
++	TaskStateFailed     TaskState = "Failed"
++	TaskStatePending    TaskState = "Pending"
++	TaskStateRejected   TaskState = "Rejected"
++	TaskStateSucceeded  TaskState = "Succeeded"
++	TaskStateInProgress TaskState = "InProgress"
++)
++
++// OperationState represents the state of the last operation.
++type OperationState string
++
++const (
++	OperationStateFailed     OperationState = "Failed"
++	OperationStatePending    OperationState = "Pending"
++	OperationStateCompleted  OperationState = "Completed"
++	OperationStateInProgress OperationState = "InProgress"
++)
+diff --git a/api/core/v1alpha1/register.go b/api/core/v1alpha1/register.go
+index 89215676..d2b99959 100644
+--- a/api/core/v1alpha1/register.go
++++ b/api/core/v1alpha1/register.go
+@@ -42,6 +42,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
+ 		&EtcdList{},
+ 		&EtcdCopyBackupsTask{},
+ 		&EtcdCopyBackupsTaskList{},
++		&EtcdOperatorTask{},
+ 	)
+ 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
+ 	return nil
+diff --git a/internal/controller/etcdoperatortask/reconciler.go b/internal/controller/etcdoperatortask/reconciler.go
+new file mode 100644
+index 00000000..99c2e721
+--- /dev/null
++++ b/internal/controller/etcdoperatortask/reconciler.go
+@@ -0,0 +1,172 @@
++/*
++SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
++and Gardener contributors
++
++SPDX-License-Identifier: Apache-2.0
++*/
++
++package etcdoperatortask
++
++import (
++	"context"
++	"fmt"
++	"time"
++
++	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
++
++	// These are just example imports. Adjust to your project structure.
++	// The below "component" or "utils" packages mirror the patterns used in the existing etcd controller.
++	"github.com/go-logr/logr"
++	"k8s.io/client-go/tools/record"
++	ctrl "sigs.k8s.io/controller-runtime"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++// ControllerName is the name of the EtcdOperatorTask controller.
++const ControllerName = "etcdoperatortask-controller"
++
++// Config holds configuration for the EtcdOperatorTask controller.
++type Config struct {
++	// Workers is the number of concurrent reconciliation workers.
++	Workers int
++
++	// Example requeue interval. You can add more config fields as needed.
++	RequeueInterval time.Duration
++}
++
++// Reconciler reconciles an EtcdOperatorTask resource.
++type Reconciler struct {
++	client   client.Client
++	recorder record.EventRecorder
++	logger   logr.Logger
++	config   *Config
++}
++
++// NewReconciler creates a new Reconciler for EtcdOperatorTask.
++func NewReconciler(mgr ctrl.Manager, cfg *Config) *Reconciler {
++	return &Reconciler{
++		client:   mgr.GetClient(),
++		recorder: mgr.GetEventRecorderFor(ControllerName),
++		logger:   ctrl.Log.WithName(ControllerName),
++		config:   cfg,
++	}
++}
++
++// Reconcile is called on every reconciliation event for an EtcdOperatorTask.
++func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
++	log := r.logger.WithValues("etcdoperatortask", req.NamespacedName)
++	log.Info("Starting reconciliation")
++
++	// 1) Fetch the current EtcdOperatorTask resource
++	task := &druidv1alpha1.EtcdOperatorTask{}
++	if err := r.client.Get(ctx, req.NamespacedName, task); err != nil {
++		// If not found, it might be deleted already. Return without error so we don't requeue.
++		return ctrl.Result{}, client.IgnoreNotFound(err)
++	}
++
++	// 2) Check if it's marked for deletion
++	if !task.GetDeletionTimestamp().IsZero() {
++		// If so, run your deletion / finalizer logic
++		if err := r.handleDeletion(ctx, log, task); err != nil {
++			return ctrl.Result{}, fmt.Errorf("failed to handle deletion: %w", err)
++		}
++		return ctrl.Result{}, nil
++	}
++
++	// 3) If not being deleted, ensure we have a finalizer if you want to do cleanup later
++	if err := r.ensureFinalizer(ctx, log, task); err != nil {
++		return ctrl.Result{}, fmt.Errorf("failed to ensure finalizer: %w", err)
++	}
++
++	// 4) Reconcile logic: do the actual task logic
++	if err := r.reconcileTaskSpec(ctx, log, task); err != nil {
++		// Optionally record an event
++		r.recorder.Eventf(task, "Warning", "ReconcileError", "Failed to reconcile task: %v", err)
++		return ctrl.Result{}, fmt.Errorf("failed to reconcile: %w", err)
++	}
++
++	// 5) Update status
++	if err := r.updateTaskStatus(ctx, log, task); err != nil {
++		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
++	}
++
++	// Requeue periodically to keep the task status fresh (optional)
++	return ctrl.Result{RequeueAfter: r.config.RequeueInterval}, nil
++}
++
++// handleDeletion runs cleanup logic if needed, then removes finalizer.
++func (r *Reconciler) handleDeletion(ctx context.Context, log logr.Logger, task *druidv1alpha1.EtcdOperatorTask) error {
++	// Perform cleanup if your logic requires it, e.g. remove associated resources
++
++	// Remove finalizer so the resource can actually be deleted
++	// (This is just an example; adapt to however you want to track finalizers.)
++	finalizer := "druid.gardener.cloud/etcd-operator-task-protection"
++	if hasFinalizer(task, finalizer) {
++		removeFinalizer(task, finalizer)
++		if err := r.client.Update(ctx, task); err != nil {
++			return fmt.Errorf("failed to remove finalizer: %w", err)
++		}
++		log.Info("Finalizer removed; resource can now be deleted")
++	}
++	return nil
++}
++
++// ensureFinalizer adds a finalizer if not already present.
++func (r *Reconciler) ensureFinalizer(ctx context.Context, log logr.Logger, task *druidv1alpha1.EtcdOperatorTask) error {
++	finalizer := "druid.gardener.cloud/etcd-operator-task-protection"
++	if !hasFinalizer(task, finalizer) {
++		task.ObjectMeta.Finalizers = append(task.ObjectMeta.Finalizers, finalizer)
++		if err := r.client.Update(ctx, task); err != nil {
++			return fmt.Errorf("failed to add finalizer: %w", err)
++		}
++		log.Info("Added finalizer")
++	}
++	return nil
++}
++
++// reconcileTaskSpec is where your main logic goes to handle the EtcdOperatorTask spec.
++func (r *Reconciler) reconcileTaskSpec(ctx context.Context, log logr.Logger, task *druidv1alpha1.EtcdOperatorTask) error {
++	// Example pseudo-logic:
++	//  1. Check task.Spec.Type
++	//  2. Possibly create / update some external resource, or schedule a job
++	//  3. Mark the resource as in-progress or succeeded
++	log.Info("Reconciling EtcdOperatorTask", "type", task.Spec.Type)
++
++	// This is an example of moving the status to "InProgress" if not set:
++	if task.Status.State == "" || task.Status.State == druidv1alpha1.TaskStatePending {
++		task.Status.State = druidv1alpha1.TaskStateInProgress
++	}
++	// Then you’d do real logic to carry out the task’s “type”...
++	// ...
++	return nil
++}
++
++// updateTaskStatus updates the EtcdOperatorTask status after reconciling.
++func (r *Reconciler) updateTaskStatus(ctx context.Context, log logr.Logger, task *druidv1alpha1.EtcdOperatorTask) error {
++	// This is where you persist changes made to task.Status
++	if task.Status.ObservedGeneration == nil || *task.Status.ObservedGeneration != task.Generation {
++		gen := task.Generation
++		task.Status.ObservedGeneration = &gen
++	}
++	return r.client.Status().Update(ctx, task)
++}
++
++// Helper methods for finalizers, adapted from typical Kubernetes controller logic
++func hasFinalizer(task *druidv1alpha1.EtcdOperatorTask, finalizer string) bool {
++	for _, f := range task.Finalizers {
++		if f == finalizer {
++			return true
++		}
++	}
++	return false
++}
++
++func removeFinalizer(task *druidv1alpha1.EtcdOperatorTask, finalizer string) {
++	var finalizers []string
++	for _, f := range task.Finalizers {
++		if f != finalizer {
++			finalizers = append(finalizers, f)
++		}
++	}
++	task.Finalizers = finalizers
++}
+diff --git a/internal/controller/etcdoperatortask/register.go b/internal/controller/etcdoperatortask/register.go
+new file mode 100644
+index 00000000..28104c0c
+--- /dev/null
++++ b/internal/controller/etcdoperatortask/register.go
+@@ -0,0 +1,151 @@
++// SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and Gardener contributors
++//
++// SPDX-License-Identifier: Apache-2.0
++
++package etcdoperatortask
++
++import (
++	"time"
++
++	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
++
++	"k8s.io/client-go/util/workqueue"
++	ctrl "sigs.k8s.io/controller-runtime"
++	"sigs.k8s.io/controller-runtime/pkg/controller"
++	"sigs.k8s.io/controller-runtime/pkg/event"
++	"sigs.k8s.io/controller-runtime/pkg/predicate"
++	"sigs.k8s.io/controller-runtime/pkg/reconcile"
++)
++
++// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdoperatortasks,verbs=get;list;watch;create;update;patch
++// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdoperatortasks/status,verbs=get;create;update;patch
++
++// RegisterWithManager sets up the controller on the given manager.
++func (r *Reconciler) RegisterWithManager(mgr ctrl.Manager) error {
++	return ctrl.
++		NewControllerManagedBy(mgr).
++		Named(ControllerName).
++		WithOptions(controller.Options{
++			MaxConcurrentReconciles: r.config.Workers,
++			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](
++				10*time.Millisecond,
++				r.config.RequeueInterval,
++			),
++		}).
++		For(&druidv1alpha1.EtcdOperatorTask{}).
++		WithEventFilter(r.buildPredicate()).
++		Complete(r)
++}
++
++// buildPredicate returns a predicate that filters events that are relevant for the Etcd controller.
++// NOTE:
++// For all conditions the following is applicable:
++// 1. create and delete events are always reconciled irrespective of whether reconcile annotation is present or auto-reconcile has been enabled.
++// 2. generic events are never reconciled. If there is a need in future to react to generic events then this should be changed.
++// Conditions for reconciliation:
++// Scenario 1: {Auto-Reconcile: false, Reconcile-Annotation-Present: false, Spec-Updated: true/false, Status-Updated: true/false, update-event-reconciled: false}
++// Scenario 2: {Auto-Reconcile: false, Reconcile-Annotation-Present: true, Spec-Updated: true, Last-Reconcile-Succeeded: true/false, Status-Updated: true/false, update-event-reconciled: true}
++// Scenario 3: {Auto-Reconcile: false, Reconcile-Annotation-Present: true, Spec-Updated: false, Last-Reconcile-Succeeded: true, Status-Updated: true/false, update-event-reconciled: true}
++// Scenario 4: {Auto-Reconcile: false, Reconcile-Annotation-Present: true, Spec-Updated: false, Last-Reconcile-Succeeded: false, Status-Updated: true/false, update-event-reconciled: false}
++// Scenario 5: {Auto-Reconcile: true, Reconcile-Annotation-Present: false, Spec-Updated: false, Status-Updated: false, update-event-reconciled: NA}, This condition cannot happen. In case of a controller restart there will only be a CreateEvent.
++// Scenario 6: {Auto-Reconcile: true, Reconcile-Annotation-Present: false, Spec-Updated: true, Status-Updated: true/false, update-event-reconciled: true}
++// Scenario 7: {Auto-Reconcile: true, Reconcile-Annotation-Present: false, Spec-Updated: false, Status-Updated: true/false, update-event-reconciled: false}
++// Scenario 8: {Auto-Reconcile: true, Reconcile-Annotation-Present: true, Spec-Updated: true, Status-Updated: true/false, update-event-reconciled: true}
++// Scenario 9: {Auto-Reconcile: true, Reconcile-Annotation-Present: true, Spec-Updated: false, Last-Reconcile-Succeeded: true, Status-Updated: true/false, update-event-reconciled: true}
++// Scenario 9: {Auto-Reconcile: true, Reconcile-Annotation-Present: true, Spec-Updated: false, Last-Reconcile-Succeeded: false, Status-Updated: true/false, update-event-reconciled: false}
++func (r *Reconciler) buildPredicate() predicate.Predicate {
++	// If the reconcile annotation is set then only allow reconciliation if one of the conditions is true:
++	// 1. There has been a spec update.
++	// 2. The last reconcile operation has finished.
++	// It is possible that during the previous reconcile one of the steps errored out. This gets captured in etcd.Status.LastOperation.
++	// Update of status will generate an event. This event should not trigger a reconcile especially when the reconcile annotation has still
++	// not been removed (since the last reconcile is not yet successfully completed).
++	onReconcileAnnotationSetPredicate := predicate.And(
++		r.hasReconcileAnnotation(),
++		predicate.Or(lastReconcileHasFinished(), specUpdated(), neverReconciled()),
++	)
++
++	return predicate.Or(
++		onReconcileAnnotationSetPredicate,
++	)
++}
++
++// hasReconcileAnnotation returns a predicate that filters events based on the presence of the reconcile annotation.
++// Annotation `gardener.cloud/operation: reconcile` is used to force a reconcile for an etcd resource. Irrespective of
++// enablement of `auto-reconcile` this annotation will trigger a reconcile. At the end of a successful reconcile spec flow
++// it should be ensured that this annotation is removed successfully.
++func (r *Reconciler) hasReconcileAnnotation() predicate.Predicate {
++	return predicate.Funcs{
++		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
++			newEtcd, ok := updateEvent.ObjectNew.(*druidv1alpha1.Etcd)
++			if !ok {
++				return false
++			}
++			return druidv1alpha1.HasReconcileOperationAnnotation(newEtcd.ObjectMeta)
++		},
++		CreateFunc: func(_ event.CreateEvent) bool {
++			return true
++		},
++		DeleteFunc:  func(_ event.DeleteEvent) bool { return true },
++		GenericFunc: func(_ event.GenericEvent) bool { return false },
++	}
++}
++
++func specUpdated() predicate.Predicate {
++	return predicate.Funcs{
++		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
++			return hasSpecChanged(updateEvent)
++		},
++		CreateFunc: func(_ event.CreateEvent) bool {
++			return true
++		},
++		DeleteFunc:  func(_ event.DeleteEvent) bool { return true },
++		GenericFunc: func(_ event.GenericEvent) bool { return false },
++	}
++}
++
++func hasSpecChanged(updateEvent event.UpdateEvent) bool {
++	return updateEvent.ObjectNew.GetGeneration() != updateEvent.ObjectOld.GetGeneration()
++}
++
++func lastReconcileHasFinished() predicate.Predicate {
++	return predicate.Funcs{
++		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
++			return hasLastReconcileFinished(updateEvent)
++		},
++		CreateFunc:  func(_ event.CreateEvent) bool { return false },
++		DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
++		GenericFunc: func(_ event.GenericEvent) bool { return false },
++	}
++}
++
++// neverReconciled handles a specific case which is outlined in https://github.com/gardener/etcd-druid/issues/898
++// It is possible that the initial Create event was not processed. In such cases, the status will not be updated.
++// If there is an update event for such a resource then the predicates should allow the event to be processed.
++func neverReconciled() predicate.Predicate {
++	return predicate.Funcs{
++		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
++			newEtcd, ok := updateEvent.ObjectNew.(*druidv1alpha1.Etcd)
++			if !ok {
++				return false
++			}
++			return newEtcd.Status.LastOperation == nil && newEtcd.Status.ObservedGeneration == nil
++		},
++		CreateFunc:  func(_ event.CreateEvent) bool { return false },
++		DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
++		GenericFunc: func(_ event.GenericEvent) bool { return false },
++	}
++}
++
++func hasLastReconcileFinished(updateEvent event.UpdateEvent) bool {
++	newEtcd, ok := updateEvent.ObjectNew.(*druidv1alpha1.Etcd)
++	// return false if either the object is not an etcd resource or it has not been reconciled yet.
++	if !ok || newEtcd.Status.LastOperation == nil {
++		return false
++	}
++	lastOpType := newEtcd.Status.LastOperation.Type
++	lastOpState := newEtcd.Status.LastOperation.State
++
++	return lastOpType == druidv1alpha1.LastOperationTypeReconcile &&
++		lastOpState == druidv1alpha1.LastOperationStateSucceeded
++}
+diff --git a/internal/controller/register.go b/internal/controller/register.go
+index a7b14b73..9fa51201 100644
+--- a/internal/controller/register.go
++++ b/internal/controller/register.go
+@@ -10,6 +10,7 @@ import (
+ 
+ 	"github.com/gardener/etcd-druid/internal/controller/compaction"
+ 	"github.com/gardener/etcd-druid/internal/controller/etcd"
++
+ 	"github.com/gardener/etcd-druid/internal/controller/etcdcopybackupstask"
+ 	"github.com/gardener/etcd-druid/internal/controller/secret"
+ 

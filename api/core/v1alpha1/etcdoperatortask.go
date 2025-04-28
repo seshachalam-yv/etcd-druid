@@ -73,11 +73,12 @@ type EtcdOperatorTaskStatus struct {
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// State is the last known state of the task.
 	State TaskState `json:"state"`
+	// +optional
 	// InitiatedAt is the time at which the task has moved from "pending" state to any other state.
-	InitiatedAt metav1.Time `json:"initiatedAt"`
+	InitiatedAt metav1.Time `json:"initiatedAt,omitempty"`
 	// LastErrors represents the errors when processing the task.
 	// +optional
-	LastErrors []EtcdOperatorTaskLastError `json:"lastErrors,omitempty"`
+	LastErrors []EtcdOperatorTaskLastError `json:"lastErrors"`
 	// Captures the last operation status if task involves many stages.
 	// +optional
 	LastOperation *EtcdOperatorLastOperation `json:"lastOperation,omitempty"`

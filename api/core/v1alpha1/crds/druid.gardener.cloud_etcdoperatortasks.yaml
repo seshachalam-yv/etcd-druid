@@ -138,7 +138,6 @@ spec:
                 description: State is the last known state of the task.
                 type: string
             required:
-            - initiatedAt
             - state
             type: object
         required:

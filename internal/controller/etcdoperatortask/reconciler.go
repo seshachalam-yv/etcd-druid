@@ -9,12 +9,15 @@ package etcdoperatortask
 
 import (
 	"context"
+	"time"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
+	druiderr "github.com/gardener/etcd-druid/internal/errors"
 	"github.com/gardener/etcd-druid/internal/operatortask"
 	"github.com/gardener/etcd-druid/internal/operatortask/ondemandsnapshot"
-	"github.com/gardener/etcd-druid/internal/tasks"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/client-go/tools/record"
 
 	"github.com/go-logr/logr"
@@ -72,13 +75,49 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	logger := r.logger.WithValues("runId", string(controller.ReconcileIDFromContext(ctx)))
+	logger.Info("Reconciling EtcdOperatorTask", "namespace", task.Namespace, "name", task.Name)
+
+	if task.Status.State == v1alpha1.TaskStateRejected {
+		return r.triggerRejectionDeletionFlow(ctx, task, logger).ReconcileResult()
+	}
+
 	operatorTask, err := r.registry.CreateOperatorTaskInstance(r.client, logger, task)
 	if err != nil {
+		if derr := druiderr.AsDruidError(err); derr != nil && derr.Code == operatortask.ERR_INVALID_CONFIG {
+			if err := r.markTaskRejected(ctx, task, derr, logger); err != nil {
+				return ctrlutils.ReconcileWithError(err).GetResult(), nil
+			}
+			// ...rest of the logic
+		}
+		logger.Error(err, "Failed to create operator task instance")
 		return reconcile.Result{}, err
 	}
+	logger.Info("IsCompleted", "namespace", task.Namespace, "name", task.Name)
 	if task.IsCompleted() || task.IsMarkedForDeletion() {
 		return r.triggerDeletionFlow(ctx, operatorTask, task).ReconcileResult()
 	}
 
-	return r.reconcileTask(tasks.TaskContext{Context: ctx, Logger: logger}, client.ObjectKeyFromObject(task), operatorTask).ReconcileResult()
+	return r.reconcileTask(ctx, client.ObjectKeyFromObject(task), operatorTask).ReconcileResult()
+}
+
+func (r *Reconciler) markTaskRejected(
+	ctx context.Context,
+	task *v1alpha1.EtcdOperatorTask,
+	derr druiderr.DruidError,
+	logger logr.Logger,
+) error {
+	task.Status.State = v1alpha1.TaskStateRejected
+	if task.Status.InitiatedAt.IsZero() {
+		task.Status.InitiatedAt = metav1.Time{Time: time.Now().UTC()}
+	}
+	task.Status.LastErrors = append(task.Status.LastErrors, v1alpha1.EtcdOperatorTaskLastError{
+		Code:        derr.Code,
+		Description: derr.Message,
+		ObservedAt:  metav1.Time{Time: time.Now().UTC()},
+	})
+	if err := r.client.Status().Update(ctx, task); err != nil {
+		logger.Error(err, "Failed to update task status")
+		return err
+	}
+	return nil
 }
