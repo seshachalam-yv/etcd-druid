@@ -81,13 +81,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return r.triggerRejectionDeletionFlow(ctx, task, logger).ReconcileResult()
 	}
 
+	var derr *druiderr.DruidError
+
 	operatorTask, err := r.registry.CreateOperatorTaskInstance(r.client, logger, task)
+
 	if err != nil {
-		if derr := druiderr.AsDruidError(err); derr != nil && derr.Code == operatortask.ERR_INVALID_CONFIG {
+		if derr = druiderr.AsDruidError(err); derr != nil && derr.Code == operatortask.ERR_INVALID_CONFIG {
 			if err := r.markTaskRejected(ctx, task, derr, logger); err != nil {
 				return ctrlutils.ReconcileWithError(err).GetResult(), nil
 			}
-			// ...rest of the logic
 		}
 		logger.Error(err, "Failed to create operator task instance")
 		return reconcile.Result{}, err
@@ -103,7 +105,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 func (r *Reconciler) markTaskRejected(
 	ctx context.Context,
 	task *v1alpha1.EtcdOperatorTask,
-	derr druiderr.DruidError,
+	derr *druiderr.DruidError,
 	logger logr.Logger,
 ) error {
 	task.Status.State = v1alpha1.TaskStateRejected
