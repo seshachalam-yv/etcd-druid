@@ -125,8 +125,6 @@ const (
 
 ### Example: EtcdOperatorTask YAML
 
-<details>
-<summary>Show Example EtcdOperatorTask YAML</summary>
 
 ```yaml
 apiVersion: druid.gardener.cloud/v1alpha1
@@ -154,13 +152,12 @@ status:
       lastTransitionTime: <time of transition to this state>
 
 ```
+</details>
 
 ## TaskHandler Interface
 
 The `TaskHandler` interface defines the contract for implementing out-of-band task logic. Each task type must provide its own handler, encapsulating admission checks, execution, and cleanup.
 
-<details>
-<summary>Show TaskHandler Interface Go Definition</summary>
 
 ```go
 type TaskResult struct {
