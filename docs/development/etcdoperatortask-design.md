@@ -133,7 +133,7 @@ apiVersion: druid.gardener.cloud/v1alpha1
 kind: EtcdOperatorTask
 metadata:
     name: <name of operator task resource>
-    namespace: <cluster namespace>
+    namespace: <namespace>
     generation: <specific generation of the desired state>
 spec:
     type: <type/category of supported out-of-band task>
