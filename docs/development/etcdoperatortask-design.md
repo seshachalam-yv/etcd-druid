@@ -1,14 +1,10 @@
-# EtcdOperatorTask Controller Design
+# EtcdOperatorTask Controller Implementation Design
 
-This document describes the design and implementation of the **EtcdOperatorTask** controller, which enables out-of-band operational tasks for etcd clusters managed by etcd-druid. The design focuses on extensibility, clear separation of concerns, and robust status tracking.
-
----
+This document builds upon the initial proposal outlined in [05-etcd-operator-tasks](https://github.com/gardener/etcd-druid/blob/main/docs/proposals/05-etcd-operator-tasks.md) and describes the design and implementation of the **EtcdOperatorTask** controller. The controller enables out-of-band operational tasks for etcd clusters managed by etcd-druid. The design emphasizes extensibility, clear separation of concerns, and robust status tracking.
 
 ## Overview
 
-The `EtcdOperatorTask` custom resource (CR) provides a generic mechanism to trigger and manage operational tasks (such as on-demand snapshots, maintenance, etc.) for etcd clusters. Each task is represented as a CR instance, with its lifecycle managed by a dedicated controller. This approach decouples operational logic from the core reconciliation loop and enables easy extension for new task types.
-
----
+The `EtcdOperatorTask` custom resource (CR) provides a generic mechanism to trigger and manage operational tasks (such as on-demand snapshots, maintenance, etc.) for etcd clusters. Each task is represented as a CR instance, with its lifecycle managed by a single controller. This approach decouples operational logic from the core reconciliation loop and ensures seamless extensibility for introducing new task types.
 
 ## Custom Resource API Design
 
@@ -16,17 +12,14 @@ The `EtcdOperatorTask` CRD is defined under the `v1alpha1` API version. It is su
 
 **Key design decisions:**
 
+The authors slightly modified CRD for implementation purposes introduced to handle out-of-band tasks as initially proposed by [05-etcd-operator-tasks](https://github.com/gardener/etcd-druid/blob/main/docs/proposals/05-etcd-operator-tasks.md)
+
 - The `spec` is immutable (`kubebuilder:validation:Immutable`) to ensure task intent cannot be changed after creation.
 - The `config` field uses `runtime.RawExtension` to flexibly support task-specific parameters, validated via admission webhook.
 - `ownerEtcdReference` under the spec field is renamed to `etcdReference` for clarity.
 - The `LastOperation` struct now uses a `Description` field instead of `Name` and `Reason` for better expressiveness.
 
----
-
 ### Go API Definition
-
-<details>
-<summary>Show EtcdOperatorTask CRD Go Definition</summary>
 
 ```go
 // +kubebuilder:object:root=true
@@ -37,7 +30,6 @@ type EtcdOperatorTask struct {
     metav1.ObjectMeta `json:"metadata,omitempty"`
 
     Spec   EtcdOperatorTaskSpec   `json:"spec"`
-    
     Status EtcdOperatorTaskStatus `json:"status,omitempty"`
 }
 
@@ -60,21 +52,16 @@ type EtcdOperatorTaskSpec struct {
     EtcdReference types.NamespacedName `json:"etcdReference,omitempty"`
 
 }
-
 ```
-</details>
 
-> **Best Practice:**
-> Use `runtime.RawExtension` for the `config` field to allow each task type to define its own schema. Validate this field with an admission webhook for type safety and user feedback.
-
----
+> [!Note]
+> Use `runtime.RawExtension` for the `config` field to enable each task type to define its own schema dynamically. Ensure this field is validated through an admission webhook to enforce type safety and provide immediate feedback to users.
 
 ### Status Subresource
 
 The `status` field tracks the progress and outcome of each task, including state transitions, errors, and operation history.
 
-<details>
-<summary>Show EtcdOperatorTaskStatus Go Definition</summary>
+
 
 ```go
 // EtcdOperatorTaskStatus is the status for a EtcdOperatorTask resource.
@@ -167,10 +154,6 @@ status:
       lastTransitionTime: <time of transition to this state>
 
 ```
-</details>
-
----
-
 
 ## TaskHandler Interface
 
@@ -200,7 +183,6 @@ type TaskHandler interface {
 }
 
 ```
-</details>
 
 **Interface responsibilities:**
 
@@ -209,15 +191,10 @@ type TaskHandler interface {
 - `Cleanup`: Post-completion or TTL-based cleanup.
 - `Name`, `Type`, `EtcdReference`: Used for metrics and logging.
 
----
-
 
 ## TaskHandler Instantiation
 
 The controller uses a factory function (`createTaskHandlerInstance`) to instantiate the correct handler for each task type. This enables easy extension and decouples task logic from the reconciler.
-
-<details>
-<summary>Show TaskHandler Instance Creation</summary>
 
 ```go
 // Add a new TaskHandler as shown below:
@@ -232,7 +209,6 @@ func (r *Reconciler) createTaskHandlerInstance(task *v1alpha1.EtcdOperatorTask) 
 }
 
 ```
-</details>
 
 ### Adding New Task Types
 
@@ -240,16 +216,51 @@ To add a new task type:
 1. Implement the `TaskHandler` interface for your task.
 2. Register the handler in `createTaskHandlerInstance` with a new case for your type.
 
----
 
+## Validating Admission Webhook
+
+To ensure only valid `EtcdOperatorTask` resources are accepted, a validating admission webhook is used. This webhook performs the following checks:
+
+- **Required Fields:** Ensures all mandatory fields in the spec are present and valid (e.g., `type`, `config`, ...).
+- **Config Validation:** Attempts to decode and validate the `config` field (`runtime.RawExtension`) according to the schema for the specified task type. If decoding or validation fails, the CR is rejected with a clear error message.
+- **TTL Validation:** If `ttlSecondsAfterFinished` is set, ensures it is greater than zero.
+
+
+## RawExtension Parsing and Task Config Validation
+
+Each task implementor **must** provide:
+
+1. **A config struct** that defines the schema for the task’s configuration.
+2. **A decode function** that parses the `runtime.RawExtension` into the config struct and performs validation.
+
+This ensures that each task type can enforce its own config requirements and validation logic, both in the webhook and at runtime.
+
+**Example for OnDemandSnapshot:**
+```go
+type OnDemandSnapshotConfig struct {
+    SnapshotType *string `json:"snapshotType,omitempty"`
+    Timeout      *int    `json:"timeoutSeconds,omitempty"`
+}
+
+func decodeOnDemandSnapshotConfig(config runtime.RawExtension) (*OnDemandSnapshotConfig, error) {
+    var snapshotConfig OnDemandSnapshotConfig
+    if err := json.Unmarshal(config.Raw, &snapshotConfig); err != nil {
+        return nil, fmt.Errorf("failed to decode config: %w", err)
+    }
+    if snapshotConfig.Timeout == nil {
+        snapshotConfig.Timeout = ptr.Int(DEFAULT_TIMEOUT)
+    }
+    // Add further validation as needed
+    return &snapshotConfig, nil
+}
+```
+
+This approach ensures that invalid or incomplete configs are rejected early, and each task type can evolve its config schema independently.
 
 
 ## Reconciliation Flow
 
 The controller's reconciliation loop manages the lifecycle of each `EtcdOperatorTask` resource, including validation, execution, status updates, and cleanup.
-
-<details>
-<summary>Show TaskReconciler Reconcile Function</summary>
 
 ```go
 func (r *TaskReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
@@ -300,15 +311,10 @@ func (r *Reconciler) reconcileTask(ctx context.Context, taskObjKey client.Object
     return ctrlutils.ReconcileAfter(task.Spec.TTLSecondsAfterFinished, "Task completed, waiting for TTL to expire")
 }
 ```
-</details>
-
----
 
 
 ### Deletion Flow
 
-<details>
-<summary>Show Task Deletion Flow</summary>
 
 ```go
 func (r *Reconciler) triggerTaskDeletionFlow(
@@ -340,16 +346,9 @@ func (r *Reconciler) triggerTaskDeletionFlow(
 }
 
 ```
-</details>
-
----
-
-
 
 ## Example: TaskHandler Implementation
 
-<details>
-<summary>Show Example TaskHandler Implementation</summary>
 
 ```go
 // OnDemandSnapshot implements the TaskHandler interface for on-demand snapshots.
@@ -443,10 +442,7 @@ func (o *OnDemandSnapshot) Cleanup(ctx context.Context) *operatortask.TaskResult
 }
 
 
-
 ```
-</details>
-
 
 #### Example YAML for an On-Demand Snapshot Task
 
@@ -467,7 +463,6 @@ spec:
   ttlSecondsAfterFinished: 600
 ```
 
-
 ### Registering a New OperatorTask
 
 1. Implement the `TaskHandler` and its constructor.
@@ -486,8 +481,6 @@ spec:
 **Benefits:**
 - **Extensible:** New OperatorTasks can be added without modifying the core controller logic.
 - **Decoupled:** OperatorTask implementations are independent from the reconciler logic.
-
-
 
 ---
 
