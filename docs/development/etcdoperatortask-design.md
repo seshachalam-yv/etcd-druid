@@ -82,7 +82,7 @@ type EtcdOperatorTaskStatus struct {
 type LastOperation struct {
   // Status of the last operation, one of pending, progress, completed, failed.
   State OperationState `json:"state"`
-  // LastTransitionTime is the time at which the operation state last transitioned from one state to another.
+  // LastTransitionTime is the time at which the operation state last transitioned from one previous state to current state i.e 'State'
   LastTransitionTime *metav1.Time `json:"lastTransitionTime"`
   // A human readable message indicating details about the last operation.
   Description string `json:"description"`
