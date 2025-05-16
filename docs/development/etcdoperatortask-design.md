@@ -41,7 +41,7 @@ type EtcdOperatorTaskSpec struct {
 
     // Config is task-specific key/value parameters.
     // +required
-    Config runtime.RawExtension `json:"config,omitempty"` 
+    Config *Config `json:"config,omitempty"` 
 
     // TTLSecondsAfterFinished controls how long the status+pod stays around.
     // +optional
@@ -51,6 +51,21 @@ type EtcdOperatorTaskSpec struct {
     // +optional
     EtcdReference types.NamespacedName `json:"etcdReference,omitempty"`
 
+}
+
+type Config struct {
+    OnDemandSnapshotConfig *OnDemandSnapshotConfig
+    // Add config fields for other tasks
+}
+
+type OnDemandSnapshotConfig struct {
+    // +required
+    // +kubebuilder:validation:Enum=full;delta
+    SnapshotType    *string
+    // +optional
+    // +kubebuilder:default:=60
+    // +kubenuilder:validation:XValidation:message="TTLSecondsAfterFinished must be greater than 0",rule="!has(self) || self > 0"
+    TimeoutSeconds  *int 
 }
 ```
 
@@ -68,13 +83,13 @@ The `status` field tracks the progress and outcome of each task, including state
 type EtcdOperatorTaskStatus struct {
   // State is the last known state of the task.
   State TaskState `json:"state"`
-  // Time at which the task has moved from "pending" state to any other state.
+  // Initiated at records the time at which the task has moved from "pending" state to the "InProgress" state.
   // +optional
   InitiatedAt *metav1.Time `json:"initiatedAt,omitempty"`
   // LastErrors represents the errors when processing the task. Will have a limit of 10 entries at a time.
   // +optional
   LastErrors []LastError `json:"lastErrors,omitempty"`
-  // Captures the last operation status if task involves many stages.
+  // LastOperation captures the last operation status if task involves many stages.
   // +optional
   LastOperation *LastOperation `json:"lastOperation,omitempty"`
 }
@@ -82,7 +97,9 @@ type EtcdOperatorTaskStatus struct {
 type LastOperation struct {
   // Status of the last operation, one of pending, progress, completed, failed.
   State OperationState `json:"state"`
-  // LastTransitionTime is the time at which the operation state last transitioned from one previous state to current state i.e 'State'
+  // Phase represents the current phase of the operation wrt the interface methods
+  Phase OperationPhase `json:"phase"`
+  // LastTransitionTime records the timestamp of the most recent state transition, marking when the operation moved from its previous state to the current value specified in the 'State' field.
   LastTransitionTime *metav1.Time `json:"lastTransitionTime"`
   // A human readable message indicating details about the last operation.
   Description string `json:"description"`
@@ -102,22 +119,28 @@ type LastError struct {
 type TaskState string
 
 const (
-  TaskStateFailed TaskState = "Failed"
-  TaskStatePending TaskState = "Pending"
-  TaskStateRejected TaskState = "Rejected"
-  TaskStateSucceeded TaskState = "Succeeded"
-  TaskStateInProgress TaskState = "InProgress"
+    TaskStatePending TaskState = "Pending"
+    TaskStateRejected TaskState = "Rejected"
+    TaskStateInProgress TaskState = "InProgress"
+    TaskStateFailed TaskState = "Failed"
+    TaskStateSucceeded TaskState = "Succeeded"
 )
 
 // OperationState represents the state of last operation run via the task.
 type OperationState string
 
 const (
-  OperationStateInProgress OperationState = "InProgress"
-  OperationStateCompleted OperationState = "Completed"
-  OperationStateFailed OperationState = "Failed"
+    OperationStateInProgress OperationState = "InProgress"
+    OperationStateCompleted OperationState = "Completed"
+    OperationStateFailed OperationState = "Failed"
 )
 
+type OperationPhase string
+const (
+    OperationPhaseAdmit OperationPhase = "Admit"
+    OperationPhaseRunning OperationPhase = "Run"
+    OperationPhaseCleanup OperationPhase = "Cleanup"
+)
 ```
 </details>
 
@@ -214,45 +237,13 @@ To add a new task type:
 2. Register the handler in `createTaskHandlerInstance` with a new case for your type.
 
 
-## Validating Admission Webhook
+## Validating The CR:
 
-To ensure only valid `EtcdOperatorTask` resources are accepted, a validating admission webhook is used. This webhook performs the following checks:
+To ensure only valid `EtcdOperatorTask` resources are accepted, a validating admission webhook is used along with `CEL` expressions to provide field validations for the CRD Schema. The following validations are done:
 
 - **Required Fields:** Ensures all mandatory fields in the spec are present and valid (e.g., `type`, `config`, ...).
-- **Config Validation:** Attempts to decode and validate the `config` field (`runtime.RawExtension`) according to the schema for the specified task type. If decoding or validation fails, the CR is rejected with a clear error message.
+- **Config Validation:** Config is defined as a nested struct where the fields point to the configs for each task type. Validation is to be done for ensuring the right match between the task type and task config. This validation will be done via an `admission webhook`.
 - **TTL Validation:** If `ttlSecondsAfterFinished` is set, ensures it is greater than zero.
-
-
-## RawExtension Parsing and Task Config Validation
-
-Each task implementor **must** provide:
-
-1. **A config struct** that defines the schema for the task’s configuration.
-2. **A decode function** that parses the `runtime.RawExtension` into the config struct and performs validation.
-
-This ensures that each task type can enforce its own config requirements and validation logic, both in the webhook and at runtime.
-
-**Example for OnDemandSnapshot:**
-```go
-type OnDemandSnapshotConfig struct {
-    SnapshotType *string `json:"snapshotType,omitempty"`
-    Timeout      *int    `json:"timeoutSeconds,omitempty"`
-}
-
-func decodeOnDemandSnapshotConfig(config runtime.RawExtension) (*OnDemandSnapshotConfig, error) {
-    var snapshotConfig OnDemandSnapshotConfig
-    if err := json.Unmarshal(config.Raw, &snapshotConfig); err != nil {
-        return nil, fmt.Errorf("failed to decode config: %w", err)
-    }
-    if snapshotConfig.Timeout == nil {
-        snapshotConfig.Timeout = ptr.Int(DEFAULT_TIMEOUT)
-    }
-    // Add further validation as needed
-    return &snapshotConfig, nil
-}
-```
-
-This approach ensures that invalid or incomplete configs are rejected early, and each task type can evolve its config schema independently.
 
 
 ## Reconciliation Flow
