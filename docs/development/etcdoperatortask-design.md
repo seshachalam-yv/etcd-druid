@@ -327,9 +327,7 @@ func (r *Reconciler) triggerTaskDeletionFlow(
     }
 
     deletionStepFns := []reconcileFn{
-        r.recordTaskDeletionStartOperation, // update the status. Skip if already done.
         r.cleanupTaskResources, // Cleanup of any kind of resources used to run the task. Runs the interface method.
-        r.recordTaskDeletionSuccessOperation,
         r.removeTaskFinalizer,
         r.removeTask, // Removes the CR.
     }
@@ -481,11 +479,12 @@ spec:
 
 ---
 
+
 ## Next Steps
 
-- Design and implement HTTP endpoints in the etcd-backup-restore server to expose the etcd maintenance API, supporting both sync and async operations.
-- Ensure the snapshot API follows the same extensible pattern.
+- Design and implement HTTP REST endpoints (e.g., `/maintenance/defrag`) in the etcd-backup-restore (etcdbr) server to expose the etcd maintenance API, supporting both synchronous and asynchronous operations. These endpoints should be similar to the existing full snapshot endpoint (`/snapshot/full`), allowing external controllers or users to trigger maintenance actions via HTTP(S) requests.
+- Ensure the snapshot maintenance APIs follow the same extensible pattern, so new operations can be added easily.
 
-This approach allows `EtcdOperatorTask` to trigger etcd maintenance operations and monitor their completion by requeuing tasks as needed.
+This approach allows `EtcdOperatorTask` to trigger etcd maintenance operations (such as full snapshot, defragmentation, etc.) by making HTTP(S) requests to etcdbr endpoints and monitor their completion by requeuing tasks as needed. For asynchronous operations, etcdbr can update the status/result back to the resource or provide a status endpoint for polling.
 
----
+---$$
