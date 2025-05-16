@@ -12,7 +12,7 @@ The `EtcdOperatorTask` CRD is defined under the `v1alpha1` API version. It is su
 
 **Key design decisions:**
 
-The authors slightly modified CRD for implementation purposes introduced to handle out-of-band tasks as initially proposed by [05-etcd-operator-tasks](https://github.com/gardener/etcd-druid/blob/main/docs/proposals/05-etcd-operator-tasks.md)
+ The authors have made minor modifications to the CRD for implementation purposes, in order to support out-of-band tasks as originally proposed in [05-etcd-operator-tasks](https://github.com/gardener/etcd-druid/blob/main/docs/proposals/05-etcd-operator-tasks.md)
 
 - The `spec` is immutable (`kubebuilder:validation:Immutable`) to ensure task intent cannot be changed after creation.
 - The `config` field uses `runtime.RawExtension` to flexibly support task-specific parameters, validated via admission webhook.
@@ -70,8 +70,8 @@ type EtcdOperatorTaskStatus struct {
   State TaskState `json:"state"`
   // Time at which the task has moved from "pending" state to any other state.
   // +optional
-  InitiatedAt *metav1.Time `json:"initiatedAt"`
-  // LastError represents the errors when processing the task. Will have a limit of 10 entries at a time.
+  InitiatedAt *metav1.Time `json:"initiatedAt,omitempty"`
+  // LastErrors represents the errors when processing the task. Will have a limit of 10 entries at a time.
   // +optional
   LastErrors []LastError `json:"lastErrors,omitempty"`
   // Captures the last operation status if task involves many stages.
