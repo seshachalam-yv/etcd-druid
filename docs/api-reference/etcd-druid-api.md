@@ -11,6 +11,7 @@ Package v1alpha1 contains API Schema definitions for the druid v1alpha1 API grou
 ### Resource Types
 - [Etcd](#etcd)
 - [EtcdCopyBackupsTask](#etcdcopybackupstask)
+- [EtcdOperatorTask](#etcdoperatortask)
 
 
 
@@ -210,6 +211,7 @@ ErrorCode is a string alias representing an error code that identifies an error.
 
 
 _Appears in:_
+- [EtcdOperatorTaskLastError](#etcdoperatortasklasterror)
 - [LastError](#lasterror)
 
 
@@ -358,6 +360,132 @@ _Appears in:_
 | `status` _[EtcdMemberConditionStatus](#etcdmemberconditionstatus)_ | Status of the condition, one of True, False, Unknown. |  |  |
 | `reason` _string_ | The reason for the condition's last transition. |  |  |
 | `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | LastTransitionTime is the last time the condition's status changed. |  |  |
+
+
+#### EtcdOperatorLastOperation
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskStatus](#etcdoperatortaskstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `state` _[OperationState](#operationstate)_ | Status of the last operation, one of pending, progress, completed, failed. |  |  |
+| `phase` _[OperationPhase](#operationphase)_ | Phase represents the current phase of the operation wrt the interface methods |  |  |
+| `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | LastTransitionTime records the timestamp of the most recent state transition, marking when the operation moved from its previous state to the current value specified in the 'State' field. |  |  |
+| `description` _string_ | A human readable message indicating details about the last operation. |  |  |
+
+
+#### EtcdOperatorTask
+
+
+
+EtcdOperatorTask represents an out-of-band operator task resource.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `druid.gardener.cloud/v1alpha1` | | |
+| `kind` _string_ | `EtcdOperatorTask` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[EtcdOperatorTaskSpec](#etcdoperatortaskspec)_ | Spec is the specification of the EtcdOperatorTask resource. |  |  |
+| `status` _[EtcdOperatorTaskStatus](#etcdoperatortaskstatus)_ | Status is most recently observed status of the EtcdOperatorTask resource. |  |  |
+
+
+#### EtcdOperatorTaskConfig
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskSpec](#etcdoperatortaskspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `onDemandSnapshotConfig` _[OnDemandSnapshotConfig](#ondemandsnapshotconfig)_ |  |  |  |
+
+
+#### EtcdOperatorTaskLastError
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskStatus](#etcdoperatortaskstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `code` _[ErrorCode](#errorcode)_ | Code is an error code that uniquely identifies an error. |  |  |
+| `description` _string_ | Description is a human-readable message indicating details of the error. |  |  |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | ObservedAt is the time at which the error was observed. |  |  |
+
+
+#### EtcdOperatorTaskSpec
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTask](#etcdoperatortask)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `config` _[EtcdOperatorTaskConfig](#etcdoperatortaskconfig)_ | TODO: Description |  |  |
+| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live to garbage collect the<br />related resource(s) of the task once it has been completed.<br />TODO: Define the default value |  |  |
+| `etcdRef` _[EtcdReference](#etcdreference)_ | OwnerEtcdReference refers to the name and namespace of the corresponding<br />Etcd owner for which the task has been invoked. |  |  |
+
+
+#### EtcdOperatorTaskStatus
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTask](#etcdoperatortask)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `state` _[TaskState](#taskstate)_ | State is the last known state of the task. |  |  |
+| `initiatedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | InitiatedAt is the time at which the task has moved from "pending" state to the inProgress state. |  |  |
+| `lastErrors` _[EtcdOperatorTaskLastError](#etcdoperatortasklasterror) array_ | LastErrors represents the errors when processing the task.<br />TODO: Set max length as 10. In the reconciler: pop the oldest error to add new one. |  |  |
+| `lastOperation` _[EtcdOperatorLastOperation](#etcdoperatorlastoperation)_ | Captures the last operation status if task involves many stages. |  |  |
+
+
+#### EtcdReference
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskSpec](#etcdoperatortaskspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the Etcd resource. |  |  |
+| `namespace` _string_ | Namespace is the namespace of the Etcd resource. |  |  |
 
 
 #### EtcdRole
@@ -557,6 +685,76 @@ _Appears in:_
 | `extensive` | Extensive is a constant for metrics level extensive.<br /> |
 
 
+#### OnDemandSnapshotConfig
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskConfig](#etcdoperatortaskconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[OnDemandSnapshotType](#ondemandsnapshottype)_ |  |  |  |
+| `timeoutSeconds` _integer_ |  |  |  |
+
+
+#### OnDemandSnapshotType
+
+_Underlying type:_ _string_
+
+
+
+
+
+_Appears in:_
+- [OnDemandSnapshotConfig](#ondemandsnapshotconfig)
+
+| Field | Description |
+| --- | --- |
+| `Full` | OnDemandSnapshotTypeFull represents a full snapshot.<br /> |
+| `Delta` | OnDemandSnapshotTypeDelta represents a delta snapshot.<br /> |
+
+
+#### OperationPhase
+
+_Underlying type:_ _string_
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorLastOperation](#etcdoperatorlastoperation)
+
+| Field | Description |
+| --- | --- |
+| `Admit` |  |
+| `Run` |  |
+| `Cleanup` |  |
+
+
+#### OperationState
+
+_Underlying type:_ _string_
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorLastOperation](#etcdoperatorlastoperation)
+
+| Field | Description |
+| --- | --- |
+| `InProgress` |  |
+| `Completed` |  |
+| `Failed` |  |
+
+
 #### SchedulingConstraints
 
 
@@ -659,6 +857,26 @@ _Appears in:_
 | `tlsCASecretRef` _[SecretReference](#secretreference)_ |  |  |  |
 | `serverTLSSecretRef` _[SecretReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#secretreference-v1-core)_ |  |  |  |
 | `clientTLSSecretRef` _[SecretReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#secretreference-v1-core)_ |  |  |  |
+
+
+#### TaskState
+
+_Underlying type:_ _string_
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskStatus](#etcdoperatortaskstatus)
+
+| Field | Description |
+| --- | --- |
+| `Failed` |  |
+| `Pending` |  |
+| `Rejected` |  |
+| `Succeeded` |  |
+| `InProgress` |  |
 
 
 #### WaitForFinalSnapshotSpec
