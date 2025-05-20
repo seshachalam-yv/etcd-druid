@@ -73,7 +73,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 		return reconcile.Result{}, nil
 	}
-
+	// add mertric for task creation
+	if task.Status.InitiatedAt.IsZero() {
+        MetricTasksCreated.WithLabelValues(task.Namespace).Inc()
+    }
 	logger := r.logger.WithValues("runId", string(controller.ReconcileIDFromContext(ctx)))
 	logger.Info("Reconciling EtcdOperatorTask", "namespace", task.Namespace, "name", task.Name)
 

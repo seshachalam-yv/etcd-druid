@@ -45,7 +45,32 @@ spec:
             properties:
               config:
                 description: Config is a task-specific configuration.
-                type: string
+                properties:
+                  onDemandSnapshotConfig:
+                    properties:
+                      snapshotType:
+                        description: SnapshotType specifies the type of snapshot to
+                          be taken.
+                        enum:
+                        - full
+                        - delta
+                        type: string
+                      timeoutSeconds:
+                        default: 60
+                        description: TimeoutSeconds specifies the timeout for the
+                          snapshot operation in seconds.
+                        type: integer
+                    required:
+                    - snapshotType
+                    type: object
+                  testConfig:
+                    properties:
+                      test:
+                        type: boolean
+                    required:
+                    - test
+                    type: object
+                type: object
               etcdRef:
                 description: |-
                   OwnerEtcdReference refers to the name and namespace of the corresponding

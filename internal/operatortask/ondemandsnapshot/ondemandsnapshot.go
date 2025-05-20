@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
+	// "time"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
@@ -40,7 +40,7 @@ type OnDemandSnapshot struct {
 	logger        logr.Logger
 	name          string
 	etcdReference types.NamespacedName
-	config        *Config
+	config        v1alpha1.Config
 }
 
 const operationAdmit = "Admit"
@@ -48,26 +48,26 @@ const operationNew = "New"
 
 func New(k8sclient client.Client, logger logr.Logger, task *v1alpha1.EtcdOperatorTask) (operatortask.OperatorTask, error) {
 	// task.Spec.Config is a string (JSON) or empty. Accept string only.
-	var cfg *Config
-	if task.Spec.Config == "" {
-		return nil, druiderr.New(operatortask.ERR_INVALID_CONFIG, operationNew, "config for OnDemandSnapshot is empty")
-	} else {
-		var m map[string]interface{}
-		err := json.Unmarshal([]byte(task.Spec.Config), &m)
-		if err != nil {
-			return nil, druiderr.WrapError(err, operatortask.ERR_INVALID_CONFIG, operationNew, "failed to parse config for OnDemandSnapshot")
-		}
-		cfg, err = parseConfig(m)
-		if err != nil {
-			return nil, druiderr.WrapError(err, operatortask.ERR_INVALID_CONFIG, operationNew, "failed to parse config for OnDemandSnapshot")
-		}
-	}
+	// var cfg *Config
+	// if task.Spec.Config == "" {
+	// 	return nil, druiderr.New(operatortask.ERR_INVALID_CONFIG, operationNew, "config for OnDemandSnapshot is empty")
+	// } else {
+	// 	var m map[string]interface{}
+	// 	err := json.Unmarshal([]byte(task.Spec.Config), &m)
+	// 	if err != nil {
+	// 		return nil, druiderr.WrapError(err, operatortask.ERR_INVALID_CONFIG, operationNew, "failed to parse config for OnDemandSnapshot")
+	// 	}
+	// 	cfg, err = parseConfig(m)
+	// 	if err != nil {
+	// 		return nil, druiderr.WrapError(err, operatortask.ERR_INVALID_CONFIG, operationNew, "failed to parse config for OnDemandSnapshot")
+	// 	}
+	// }
 	return &OnDemandSnapshot{
 		client:        k8sclient,
 		logger:        logger,
 		name:          task.Name,
 		etcdReference: types.NamespacedName(*task.Spec.EtcdRef),
-		config:        cfg,
+		config:        task.Spec.Config,
 	}, nil
 }
 
@@ -90,16 +90,16 @@ func (o *OnDemandSnapshot) Run(ctx context.Context) *operatortask.TaskResult {
 		return &operatortask.TaskResult{Description: "Failed to get Etcd resource", Error: err}
 	}
 
-	snapType := "full"
-	if o.config.SnapshotType != nil && *o.config.SnapshotType != "" {
-		snapType = *o.config.SnapshotType
-	}
-	timeout := 30 * time.Second
-	if o.config.TimeoutSeconds != nil && *o.config.TimeoutSeconds > 0 {
-		timeout = time.Duration(*o.config.TimeoutSeconds) * time.Second
-	}
+	// snapType := "full"
+	// if o.config.SnapshotType != nil && *o.config.SnapshotType != "" {
+	// 	snapType = *o.config.SnapshotType
+	// }
+	// timeout := 30 * time.Second
+	// if o.config.TimeoutSeconds != nil && *o.config.TimeoutSeconds > 0 {
+	// 	timeout = time.Duration(*o.config.TimeoutSeconds) * time.Second
+	// }
 
-	o.logger.Info("Snapshot config", "snapshotType", snapType, "timeout", timeout)
+	o.logger.Info("Snapshot config", "snapshotType", o.config.OnDemandSnapshotConfig.SnapshotType, "timeout", o.config.OnDemandSnapshotConfig.TimeoutSeconds)
 
 	url := fmt.Sprintf("http://%s.%s:%d/snapshot/full?final=true", v1alpha1.GetClientServiceName(etcd.ObjectMeta), etcd.Namespace, ptr.Deref(etcd.Spec.Backup.Port, common.DefaultPortEtcdBackupRestore))
 
@@ -112,7 +112,7 @@ func (o *OnDemandSnapshot) Run(ctx context.Context) *operatortask.TaskResult {
 	}
 	o.logger.Info("Triggering snapshot", "url", url)
 
-	httpClient := &http.Client{Timeout: timeout}
+	httpClient := &http.Client{Timeout: 30}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return &operatortask.TaskResult{Description: "Snapshot HTTP request failed", Error: err}

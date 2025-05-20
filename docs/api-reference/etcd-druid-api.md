@@ -184,6 +184,23 @@ _Appears in:_
 | `Failed` | EtcdCopyBackupsTaskFailed is a condition type indicating that a EtcdCopyBackupsTask has failed.<br /> |
 
 
+#### Config
+
+
+
+
+
+
+
+_Appears in:_
+- [EtcdOperatorTaskSpec](#etcdoperatortaskspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `onDemandSnapshotConfig` _[OnDemandSnapshotConfig](#ondemandsnapshotconfig)_ |  |  |  |
+| `testConfig` _[TestConfig](#testconfig)_ |  |  |  |
+
+
 #### CrossVersionObjectReference
 
 
@@ -430,7 +447,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `type` _[EtcdOperatorTaskType](#etcdoperatortasktype)_ | Type specifies the type of out-of-band operator task to be performed. |  |  |
-| `config` _string_ | Config is a task-specific configuration. |  |  |
+| `config` _[Config](#config)_ | Config is a task-specific configuration. |  |  |
 | `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live to garbage collect the<br />related resource(s) of the task once it has been completed. |  |  |
 | `etcdRef` _[EtcdReference](#etcdreference)_ | OwnerEtcdReference refers to the name and namespace of the corresponding<br />Etcd owner for which the task has been invoked. |  |  |
 
@@ -685,6 +702,23 @@ _Appears in:_
 
 
 
+#### OnDemandSnapshotConfig
+
+
+
+
+
+
+
+_Appears in:_
+- [Config](#config)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `snapshotType` _string_ | SnapshotType specifies the type of snapshot to be taken. |  | Enum: [full delta] <br /> |
+| `timeoutSeconds` _integer_ | TimeoutSeconds specifies the timeout for the snapshot operation in seconds. | 60 |  |
+
+
 #### OperationState
 
 _Underlying type:_ _string_
@@ -825,6 +859,22 @@ _Appears in:_
 | `Rejected` |  |
 | `Succeeded` |  |
 | `InProgress` |  |
+
+
+#### TestConfig
+
+
+
+
+
+
+
+_Appears in:_
+- [Config](#config)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `test` _boolean_ |  |  |  |
 
 
 #### WaitForFinalSnapshotSpec

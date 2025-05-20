@@ -8,5 +8,10 @@ spec:
   etcdRef:
     name: etcd-test
     namespace: default
-  config: '{"snapshotType":"full","timeoutSeconds":60}'
-  ttlSecondsAfterFinished: 20 # Optional: auto-delete after 10 minutes
+  config: 
+    onDemandSnapshotConfig:
+      snapshotType: full
+      timeoutSeconds: 60
+    testConfig:
+      test: false
+  ttlSecondsAfterFinished: 20 

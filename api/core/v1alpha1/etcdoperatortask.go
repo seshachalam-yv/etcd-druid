@@ -49,7 +49,8 @@ type EtcdOperatorTaskSpec struct {
 	Type EtcdOperatorTaskType `json:"type"`
 
 	// Config is a task-specific configuration.
-	Config string `json:"config,omitempty"`
+	// +optional
+	Config Config `json:"config,omitempty"`
 
 	// TTLSecondsAfterFinished is the time-to-live to garbage collect the
 	// related resource(s) of the task once it has been completed.
@@ -59,6 +60,29 @@ type EtcdOperatorTaskSpec struct {
 	// OwnerEtcdReference refers to the name and namespace of the corresponding
 	// Etcd owner for which the task has been invoked.
 	EtcdRef *EtcdReference `json:"etcdRef"`
+}
+
+type Config struct {
+	// +optional
+	OnDemandSnapshotConfig *OnDemandSnapshotConfig `json:"onDemandSnapshotConfig,omitempty"`
+	// +optional
+	TestConfig             *TestConfig             `json:"testConfig,omitempty"`
+}
+
+type OnDemandSnapshotConfig struct {
+	// SnapshotType specifies the type of snapshot to be taken.
+	// +required
+	// +kubebuilder:validation:Enum=full;delta
+	SnapshotType *string `json:"snapshotType"`
+
+	// TimeoutSeconds specifies the timeout for the snapshot operation in seconds.
+	// +optional
+	// +kubebuilder:default:=60
+	TimeoutSeconds *int `json:"timeoutSeconds,omitempty"`
+}
+
+type TestConfig struct{
+	Test bool `json:"test"`
 }
 
 // EtcdReference is a custom struct to hold the name and namespace of the Etcd owner.
