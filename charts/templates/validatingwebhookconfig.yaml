@@ -131,6 +131,7 @@ webhooks:
         scope: '*'
     sideEffects: None
     timeoutSeconds: 10
+<<<<<<< HEAD
 <<<<<<< HEAD:charts/templates/validating-webhook-config.yaml
 {{- end }}
 
@@ -164,3 +165,7 @@ webhooks:
 =======
 >>>>>>> 16a5858f (Introducing OperatorConfig to replace existing CLI flags (#1090)):charts/templates/validatingwebhookconfig.yaml
 {{- end }}
+=======
+{{- end }}
+
+>>>>>>> 8ce05585 (implementation of delete handler + admission webhook)

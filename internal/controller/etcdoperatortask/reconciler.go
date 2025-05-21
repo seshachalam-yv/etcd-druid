@@ -111,3 +111,4 @@ func (r *Reconciler) createTaskHandlerInstance(task *v1alpha1.EtcdOperatorTask, 
 func (r *Reconciler) shouldDeleteTask(task *v1alpha1.EtcdOperatorTask) bool {
 	return task.IsCompleted() || task.IsMarkedForDeletion()
 }
+
