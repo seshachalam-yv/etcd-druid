@@ -44,14 +44,28 @@ spec:
             description: Spec is the specification of the EtcdOperatorTask resource.
             properties:
               config:
+                description: Config is task-specific key/value parameters. Only the
+                  relevant config for the task type should be set.
                 properties:
                   onDemandSnapshotConfig:
+                    description: Only set if Type is OnDemandSnapshot
                     properties:
+                      isFinal:
+                        description: IsFinal indicates if this is the final snapshot.
+                          Only applicable for full snapshots.
+                        type: boolean
                       timeoutSeconds:
+                        description: Timeout in seconds for the snapshot operation
                         format: int32
                         type: integer
                       type:
+                        description: 'Type of snapshot: "full" or "delta"'
+                        enum:
+                        - full
+                        - delta
                         type: string
+                    required:
+                    - type
                     type: object
                 type: object
               etcdRef:
@@ -74,6 +88,7 @@ spec:
                   TTLSecondsAfterFinished is the time-to-live to garbage collect the
                   related resource(s) of the task once it has been completed.
                 format: int32
+                minimum: 1
                 type: integer
             required:
             - config
@@ -109,6 +124,7 @@ spec:
                   - description
                   - observedAt
                   type: object
+                maxItems: 10
                 type: array
               lastOperation:
                 description: Captures the last operation status if task involves many
@@ -139,6 +155,11 @@ spec:
                 - phase
                 - state
                 type: object
+              lastTransitionTime:
+                description: LastTransitionTime is the last time the task transitioned
+                  from one state to another.
+                format: date-time
+                type: string
               state:
                 description: State is the last known state of the task.
                 type: string

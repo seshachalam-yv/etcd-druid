@@ -6,6 +6,7 @@ package webhook
 
 import (
 	"github.com/gardener/etcd-druid/internal/webhook/etcdcomponents"
+	"github.com/gardener/etcd-druid/internal/webhook/etcdoperatortask"
 
 	"golang.org/x/exp/slog"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,7 +24,16 @@ func Register(mgr ctrl.Manager, config *Config) error {
 			return err
 		}
 		slog.Info("Registering EtcdComponents Webhook with manager")
-		return etcdComponentsWebhook.RegisterWithManager(mgr)
+		if err := etcdComponentsWebhook.RegisterWithManager(mgr); err != nil {
+			return err
+		}
+	}
+	// Add EtcdOperatorTask webhook to the manager
+	if config.EtcdOperatorTask.Enabled {
+		slog.Info("Registering EtcdOperatorTask Webhook with manager")
+		if err := etcdoperatortask.RegisterWithManager(mgr); err != nil {
+			return err
+		}
 	}
 	return nil
 }

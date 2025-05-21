@@ -396,7 +396,7 @@ EtcdOperatorTask represents an out-of-band operator task resource.
 | `apiVersion` _string_ | `druid.gardener.cloud/v1alpha1` | | |
 | `kind` _string_ | `EtcdOperatorTask` | | |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[EtcdOperatorTaskSpec](#etcdoperatortaskspec)_ | Spec is the specification of the EtcdOperatorTask resource. |  |  |
+| `spec` _[EtcdOperatorTaskSpec](#etcdoperatortaskspec)_ | Spec is the specification of the EtcdOperatorTask resource. |  | Required: \{\} <br /> |
 | `status` _[EtcdOperatorTaskStatus](#etcdoperatortaskstatus)_ | Status is most recently observed status of the EtcdOperatorTask resource. |  |  |
 
 
@@ -413,7 +413,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `onDemandSnapshotConfig` _[OnDemandSnapshotConfig](#ondemandsnapshotconfig)_ |  |  |  |
+| `onDemandSnapshotConfig` _[OnDemandSnapshotConfig](#ondemandsnapshotconfig)_ | Only set if Type is OnDemandSnapshot |  |  |
 
 
 #### EtcdOperatorTaskLastError
@@ -438,7 +438,7 @@ _Appears in:_
 
 
 
-
+EtcdOperatorTaskSpec defines the desired state of EtcdOperatorTask.
 
 
 
@@ -447,8 +447,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `config` _[EtcdOperatorTaskConfig](#etcdoperatortaskconfig)_ | TODO: Description |  |  |
-| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live to garbage collect the<br />related resource(s) of the task once it has been completed.<br />TODO: Define the default value |  |  |
+| `config` _[EtcdOperatorTaskConfig](#etcdoperatortaskconfig)_ | Config is task-specific key/value parameters. Only the relevant config for the task type should be set. |  | Required: \{\} <br /> |
+| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live to garbage collect the<br />related resource(s) of the task once it has been completed. |  | Minimum: 1 <br /> |
 | `etcdRef` _[EtcdReference](#etcdreference)_ | OwnerEtcdReference refers to the name and namespace of the corresponding<br />Etcd owner for which the task has been invoked. |  |  |
 
 
@@ -466,8 +466,9 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `state` _[TaskState](#taskstate)_ | State is the last known state of the task. |  |  |
+| `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | LastTransitionTime is the last time the task transitioned from one state to another. |  |  |
 | `initiatedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | InitiatedAt is the time at which the task has moved from "pending" state to the inProgress state. |  |  |
-| `lastErrors` _[EtcdOperatorTaskLastError](#etcdoperatortasklasterror) array_ | LastErrors represents the errors when processing the task.<br />TODO: Set max length as 10. In the reconciler: pop the oldest error to add new one. |  |  |
+| `lastErrors` _[EtcdOperatorTaskLastError](#etcdoperatortasklasterror) array_ | LastErrors represents the errors when processing the task. |  | MaxItems: 10 <br /> |
 | `lastOperation` _[EtcdOperatorLastOperation](#etcdoperatorlastoperation)_ | Captures the last operation status if task involves many stages. |  |  |
 
 
@@ -484,8 +485,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `name` _string_ | Name is the name of the Etcd resource. |  |  |
-| `namespace` _string_ | Namespace is the namespace of the Etcd resource. |  |  |
+| `name` _string_ | Name is the name of the Etcd resource. |  | Required: \{\} <br /> |
+| `namespace` _string_ | Namespace is the namespace of the Etcd resource. |  | Required: \{\} <br /> |
 
 
 #### EtcdRole
@@ -698,8 +699,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `type` _[OnDemandSnapshotType](#ondemandsnapshottype)_ |  |  |  |
-| `timeoutSeconds` _integer_ |  |  |  |
+| `type` _[OnDemandSnapshotType](#ondemandsnapshottype)_ | Type of snapshot: "full" or "delta" |  | Enum: [full delta] <br />Required: \{\} <br /> |
+| `isFinal` _boolean_ | IsFinal indicates if this is the final snapshot. Only applicable for full snapshots. |  |  |
+| `timeoutSeconds` _integer_ | Timeout in seconds for the snapshot operation |  |  |
 
 
 #### OnDemandSnapshotType
@@ -715,8 +717,8 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `Full` | OnDemandSnapshotTypeFull represents a full snapshot.<br /> |
-| `Delta` | OnDemandSnapshotTypeDelta represents a delta snapshot.<br /> |
+| `full` | OnDemandSnapshotTypeFull represents a full snapshot.<br /> |
+| `delta` | OnDemandSnapshotTypeDelta represents a delta snapshot.<br /> |
 
 
 #### OperationPhase

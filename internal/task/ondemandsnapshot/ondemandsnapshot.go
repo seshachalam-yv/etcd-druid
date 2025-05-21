@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"time"
 
+	"net/http"
+
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
+	"github.com/gardener/etcd-druid/internal/common"
 	"github.com/gardener/etcd-druid/internal/task"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"github.com/gardener/etcd-druid/internal/common"
 	"k8s.io/utils/ptr"
-	"net/http"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
 
 type OnDemandSnapshotTask struct {
 	client        client.Client
@@ -23,7 +23,6 @@ type OnDemandSnapshotTask struct {
 	etcdReference v1alpha1.EtcdReference
 	config        v1alpha1.OnDemandSnapshotConfig
 }
-
 
 func New(k8sclient client.Client, logger logr.Logger, task *v1alpha1.EtcdOperatorTask) (task.Handler, error) {
 
@@ -55,7 +54,7 @@ func (o *OnDemandSnapshotTask) Logger() logr.Logger {
 // 1) Backup should be enabled
 // 2) TODO: Duplicate check via admission controller.
 // 3) Add function to check quorum in helper
-func (o *OnDemandSnapshotTask) Admit(ctx context.Context) *task.Result { 
+func (o *OnDemandSnapshotTask) Admit(ctx context.Context) *task.Result {
 	var etcd v1alpha1.Etcd
 	if err := o.client.Get(ctx, o.EtcdReference(), &etcd); err != nil {
 		return &task.Result{
@@ -104,7 +103,10 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 		}
 	}
 
-	url := fmt.Sprintf("http://%s.%s:%d/snapshot/%s?final=true", v1alpha1.GetClientServiceName(etcd.ObjectMeta), etcd.Namespace, ptr.Deref(etcd.Spec.Backup.Port, common.DefaultPortEtcdBackupRestore), o.config.Type)
+	url := fmt.Sprintf("http://%s.%s:%d/snapshot/%s", v1alpha1.GetClientServiceName(etcd.ObjectMeta), etcd.Namespace, ptr.Deref(etcd.Spec.Backup.Port, common.DefaultPortEtcdBackupRestore), o.config.Type)
+	if o.config.IsFinal {
+		url += "?final=true"
+	}
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
 		return &task.Result{
@@ -114,7 +116,7 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 		}
 	}
 
-	httpClient := &http.Client{Timeout: time.Duration(*o.config.TimeoutSeconds)}
+	httpClient := &http.Client{Timeout: time.Second * time.Duration(*o.config.TimeoutSeconds)}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return &task.Result{
@@ -146,7 +148,7 @@ func (o *OnDemandSnapshotTask) Cleanup(ctx context.Context) *task.Result {
 
 func CheckEtcdReadiness(ctx context.Context, etcd *v1alpha1.Etcd) error {
 	for _, condition := range etcd.Status.Conditions {
-		if condition.Type == v1alpha1.ConditionTypeReady  {
+		if condition.Type == v1alpha1.ConditionTypeReady {
 			return nil
 		}
 	}

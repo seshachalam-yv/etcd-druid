@@ -44,40 +44,52 @@ func New(mgr manager.Manager, cfg *Config) *Reconciler {
 	}
 }
 
-
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-    // The below block checks for the OperatorTask.
-    task := &v1alpha1.EtcdOperatorTask{}
-    if err := r.client.Get(ctx, req.NamespacedName, task); err != nil {
-        if client.IgnoreNotFound(err) != nil {
-            return reconcile.Result{}, err
-        }
-        return reconcile.Result{}, nil
-    }
+	logger := r.logger.WithValues("runId", string(controller.ReconcileIDFromContext(ctx)), "namespace", req.Namespace, "name", req.Name)
+	logger.Info("Reconciling EtcdOperatorTask")
 
-    logger := r.logger.WithValues("runId", string(controller.ReconcileIDFromContext(ctx)))
-    // create a instance of TaskHandler
-    taskHandlerInstance, err := r.createTaskHandlerInstance(task)
-	// TODO: Check if error handling is needed here.
-	if err != nil {
-		logger.Error(err, "failed to create task handler instance")
-		return reconcile.Result{}, err
+	// The below block checks for the OperatorTask.
+	task := &v1alpha1.EtcdOperatorTask{}
+	if err := r.client.Get(ctx, req.NamespacedName, task); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			logger.Error(err, "Failed to get EtcdOperatorTask")
+			return reconcile.Result{}, err
+		}
+		logger.Info("EtcdOperatorTask not found, might have been deleted")
+		return reconcile.Result{}, nil
 	}
 
-    
-    // Triggers the deletion flow in case the task is in a completed state or if it has been marked for deletion.
-    if task.IsCompleted() || task.IsMarkedForDeletion() {
-        return r.triggerDeletionFlow(ctx, taskHandlerInstance, task).ReconcileResult()
-    }
-    // triggers the task execution flow.
-    return r.reconcileTask(ctx, client.ObjectKeyFromObject(task), taskHandlerInstance).ReconcileResult()
-}
+	// create a instance of TaskHandler
+	taskHandlerInstance, err := r.createTaskHandlerInstance(task)
+	if err != nil {
+		logger.Error(err, "Failed to create task handler instance")
+		return ctrlutils.ReconcileWithError(err).ReconcileResult()
+	}
 
+	// Triggers the deletion flow in case the task is in a completed state or if it has been marked for deletion.
+	if task.IsCompleted() || task.IsMarkedForDeletion() {
+		logger.Info("Triggering deletion flow", "completed", task.IsCompleted(), "markedForDeletion", task.IsMarkedForDeletion())
+		result, err := r.triggerDeletionFlow(ctx, taskHandlerInstance, task).ReconcileResult()
+		if err != nil {
+			return ctrlutils.ReconcileWithError(err).ReconcileResult()
+		}
+		return result, nil
+	}
+
+	// triggers the task execution flow.
+	logger.Info("Triggering task execution flow")
+	result, err := r.reconcileTask(ctx, client.ObjectKeyFromObject(task), taskHandlerInstance).ReconcileResult()
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	return result, nil
+}
 
 func (r *Reconciler) createTaskHandlerInstance(task *v1alpha1.EtcdOperatorTask) (task.Handler, error) {
 	if task.Spec.Config.OnDemandSnapshot != nil {
 		return ondemandsnapshot.New(r.client, r.logger, task)
 	}
 	return nil, fmt.Errorf("task type not supported")
-   
+
 }
+

@@ -75,6 +75,7 @@ rules:
   resources:
   - etcds
   - etcdcopybackupstasks
+  - etcdoperatortasks
   verbs:
   - get
   - list
@@ -87,11 +88,25 @@ rules:
   - etcds/status
   - etcds/finalizers
   - etcdcopybackupstasks/status
+  - etcdoperatortasks/status
   verbs:
   - get
   - update
   - patch
   - create
+- apiGroups:
+  - druid.gardener.cloud
+  resources:
+  - etcdoperatortasks
+  - etcdoperatortasks/status
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
 - apiGroups:
   - coordination.k8s.io
   resources:

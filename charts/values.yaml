@@ -56,8 +56,10 @@ controllers:
     workers: 10
 
 webhooks:
+  etcdOperatorTask:
+    enabled: true
   etcdComponents:
-    enabled: false
+    enabled: true
     # reconciler-service-account: system:serviceaccount:{{ .Release.Namespace }}:etcd-druid
     exemptServiceAccounts:
       - system:serviceaccount:kube-system:generic-garbage-collector

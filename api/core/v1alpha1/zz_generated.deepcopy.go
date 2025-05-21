@@ -677,6 +677,10 @@ func (in *EtcdOperatorTaskStatus) DeepCopyInto(out *EtcdOperatorTaskStatus) {
 		*out = new(TaskState)
 		**out = **in
 	}
+	if in.LastTransitionTime != nil {
+		in, out := &in.LastTransitionTime, &out.LastTransitionTime
+		*out = (*in).DeepCopy()
+	}
 	if in.InitiatedAt != nil {
 		in, out := &in.InitiatedAt, &out.InitiatedAt
 		*out = (*in).DeepCopy()

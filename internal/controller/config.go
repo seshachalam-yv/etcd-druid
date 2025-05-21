@@ -8,6 +8,7 @@ import (
 	"github.com/gardener/etcd-druid/internal/controller/compaction"
 	"github.com/gardener/etcd-druid/internal/controller/etcd"
 	"github.com/gardener/etcd-druid/internal/controller/etcdcopybackupstask"
+	"github.com/gardener/etcd-druid/internal/controller/etcdoperatortask"
 	"github.com/gardener/etcd-druid/internal/controller/secret"
 
 	flag "github.com/spf13/pflag"
@@ -23,7 +24,8 @@ type Config struct {
 	// EtcdCopyBackupsTask is the configuration required for etcd-copy-backup-tasks controller.
 	EtcdCopyBackupsTask *etcdcopybackupstask.Config
 	// Secret is the configuration required for secret controller.
-	Secret *secret.Config
+	Secret           *secret.Config
+	EtcdOperatorTask *etcdoperatortask.Config
 }
 
 // InitFromFlags initializes the controller config from the provided CLI flag set.

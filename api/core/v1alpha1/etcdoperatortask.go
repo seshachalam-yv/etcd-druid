@@ -14,9 +14,9 @@ type OnDemandSnapshotType string
 
 const (
 	// OnDemandSnapshotTypeFull represents a full snapshot.
-	OnDemandSnapshotTypeFull OnDemandSnapshotType = "Full"
+	OnDemandSnapshotTypeFull OnDemandSnapshotType = "full"
 	// OnDemandSnapshotTypeDelta represents a delta snapshot.
-	OnDemandSnapshotTypeDelta OnDemandSnapshotType = "Delta"
+	OnDemandSnapshotTypeDelta OnDemandSnapshotType = "delta"
 )
 
 type TaskState string
@@ -32,17 +32,17 @@ const (
 type OperationState string
 
 const (
-    OperationStateInProgress OperationState = "InProgress"
-    OperationStateCompleted OperationState = "Completed"
-    OperationStateFailed OperationState = "Failed"
+	OperationStateInProgress OperationState = "InProgress"
+	OperationStateCompleted  OperationState = "Completed"
+	OperationStateFailed     OperationState = "Failed"
 )
 
 type OperationPhase string
 
 const (
-    OperationPhaseAdmit OperationPhase = "Admit"
-    OperationPhaseRunning OperationPhase = "Run"
-    OperationPhaseCleanup OperationPhase = "Cleanup"
+	OperationPhaseAdmit   OperationPhase = "Admit"
+	OperationPhaseRunning OperationPhase = "Run"
+	OperationPhaseCleanup OperationPhase = "Cleanup"
 )
 
 // +genclient
@@ -56,6 +56,8 @@ type EtcdOperatorTask struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Immutable
 	// Spec is the specification of the EtcdOperatorTask resource.
 	Spec EtcdOperatorTaskSpec `json:"spec"`
 	// Status is most recently observed status of the EtcdOperatorTask resource.
@@ -72,14 +74,17 @@ type EtcdOperatorTaskList struct {
 	Items           []EtcdOperatorTask `json:"items"`
 }
 
+// EtcdOperatorTaskSpec defines the desired state of EtcdOperatorTask.
+// +kubebuilder:validation:Immutable
 type EtcdOperatorTaskSpec struct {
-	// TODO: Description
-	// +required
-	Config EtcdOperatorTaskConfig `json:"config,omitempty"`
+	// +kubebuilder:validation:Immutable
+	// Config is task-specific key/value parameters. Only the relevant config for the task type should be set.
+	// +kubebuilder:validation:Required
+	Config EtcdOperatorTaskConfig `json:"config"`
 
 	// TTLSecondsAfterFinished is the time-to-live to garbage collect the
 	// related resource(s) of the task once it has been completed.
-	// TODO: Define the default value
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`
 
@@ -90,15 +95,16 @@ type EtcdOperatorTaskSpec struct {
 }
 
 type EtcdOperatorTaskConfig struct {
+	// Only set if Type is OnDemandSnapshot
 	OnDemandSnapshot *OnDemandSnapshotConfig `json:"onDemandSnapshotConfig,omitempty"`
 }
 
 type EtcdReference struct {
 	// Name is the name of the Etcd resource.
-	// +required
+	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 	// Namespace is the namespace of the Etcd resource.
-	// +required	
+	// +kubebuilder:validation:Required
 	Namespace string `json:"namespace"`
 }
 
@@ -106,12 +112,15 @@ type EtcdOperatorTaskStatus struct {
 	// State is the last known state of the task.
 	// +optional
 	State *TaskState `json:"state"`
+	// LastTransitionTime is the last time the task transitioned from one state to another.
 	// +optional
+	LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
 	// InitiatedAt is the time at which the task has moved from "pending" state to the inProgress state.
+	// +optional
 	InitiatedAt *metav1.Time `json:"initiatedAt,omitempty"`
 	// LastErrors represents the errors when processing the task.
+	// +kubebuilder:validation:MaxItems=10
 	// +optional
-	// TODO: Set max length as 10. In the reconciler: pop the oldest error to add new one.
 	LastErrors []EtcdOperatorTaskLastError `json:"lastErrors"`
 	// Captures the last operation status if task involves many stages.
 	// +optional
@@ -128,15 +137,15 @@ type EtcdOperatorTaskLastError struct {
 }
 
 type EtcdOperatorLastOperation struct {
-  	// Status of the last operation, one of pending, progress, completed, failed.
-  	State OperationState `json:"state"`
-  	// Phase represents the current phase of the operation wrt the interface methods
-  	Phase OperationPhase `json:"phase"`
-  	// LastTransitionTime records the timestamp of the most recent state transition, marking when the operation moved from its previous state to the current value specified in the 'State' field.
-  	LastTransitionTime *metav1.Time `json:"lastTransitionTime"`
-  	// A human readable message indicating details about the last operation.
-  	Description string `json:"description"`
-}	
+	// Status of the last operation, one of pending, progress, completed, failed.
+	State OperationState `json:"state"`
+	// Phase represents the current phase of the operation wrt the interface methods
+	Phase OperationPhase `json:"phase"`
+	// LastTransitionTime records the timestamp of the most recent state transition, marking when the operation moved from its previous state to the current value specified in the 'State' field.
+	LastTransitionTime *metav1.Time `json:"lastTransitionTime"`
+	// A human readable message indicating details about the last operation.
+	Description string `json:"description"`
+}
 
 // IsCompleted returns true if the task is completed.
 func (t *EtcdOperatorTask) IsCompleted() bool {
@@ -156,13 +165,23 @@ func (t *EtcdOperatorTask) HasTTLExpired() bool {
 	if t.Spec.TTLSecondsAfterFinished == nil || t.Status.InitiatedAt.IsZero() {
 		return false
 	}
-	expiry := t.Status.InitiatedAt.Add(time.Duration(*t.Spec.TTLSecondsAfterFinished) * time.Second)
+	if !t.IsCompleted() {
+		return false
+	}
+	lastTransitionTime := t.Status.LastTransitionTime
+	expiry := lastTransitionTime.Add(time.Duration(*t.Spec.TTLSecondsAfterFinished) * time.Second)
 	return time.Now().After(expiry)
 }
 
 type OnDemandSnapshotConfig struct {
+	// Type of snapshot: "full" or "delta"
+	// +kubebuilder:validation:Enum=full;delta
+	// +kubebuilder:validation:Required
 	Type OnDemandSnapshotType `json:"type,omitempty"`
+	// IsFinal indicates if this is the final snapshot. Only applicable for full snapshots.
+	// +optional
+	IsFinal bool `json:"isFinal,omitempty"`
+	// Timeout in seconds for the snapshot operation
 	// +optional
 	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
 }
-
