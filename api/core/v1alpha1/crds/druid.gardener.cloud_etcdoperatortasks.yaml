@@ -41,25 +41,29 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec is the specification of the EtcdOperatorTask resource.
+            description: Spec defines the desired state of the EtcdOperatorTask resource.
             properties:
               config:
-                description: Config is task-specific key/value parameters. Only the
-                  relevant config for the task type should be set.
+                description: |-
+                  Config defines the configuration for the EtcdOperatorTask.
+                  Only one of the configurations can be specified at a time.
                 properties:
                   onDemandSnapshotConfig:
-                    description: Only set if Type is OnDemandSnapshot
+                    description: OnDemandSnapshotConfig specifies configuration for
+                      on-demand snapshot tasks.
                     properties:
                       isFinal:
                         description: IsFinal indicates if this is the final snapshot.
                           Only applicable for full snapshots.
                         type: boolean
                       timeoutSeconds:
-                        description: Timeout in seconds for the snapshot operation
+                        description: TimeoutSeconds is the timeout in seconds for
+                          the snapshot operation.
                         format: int32
                         type: integer
                       type:
-                        description: 'Type of snapshot: "full" or "delta"'
+                        description: 'Type specifies the type of snapshot: "full"
+                          or "delta".'
                         enum:
                         - full
                         - delta
@@ -68,9 +72,13 @@ spec:
                     - type
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: The config field in spec is immutable and cannot be changed
+                    after creation.
+                  rule: self == oldSelf
               etcdRef:
                 description: |-
-                  OwnerEtcdReference refers to the name and namespace of the corresponding
+                  EtcdRef refers to the name and namespace of the corresponding
                   Etcd owner for which the task has been invoked.
                 properties:
                   name:
@@ -83,18 +91,26 @@ spec:
                 - name
                 - namespace
                 type: object
+                x-kubernetes-validations:
+                - message: The etcdRef field in spec is immutable and cannot be changed
+                    after creation.
+                  rule: self == oldSelf
               ttlSecondsAfterFinished:
                 description: |-
-                  TTLSecondsAfterFinished is the time-to-live to garbage collect the
+                  TTLSecondsAfterFinished is the time-to-live (in seconds) to garbage collect the
                   related resource(s) of the task once it has been completed.
                 format: int32
                 minimum: 1
                 type: integer
+                x-kubernetes-validations:
+                - message: The ttlSecondsAfterFinished field in spec is immutable
+                    and cannot be changed after creation.
+                  rule: self == oldSelf
             required:
             - config
             type: object
           status:
-            description: Status is most recently observed status of the EtcdOperatorTask
+            description: Status is the most recently observed status of the EtcdOperatorTask
               resource.
             properties:
               initiatedAt:
@@ -127,12 +143,12 @@ spec:
                 maxItems: 10
                 type: array
               lastOperation:
-                description: Captures the last operation status if task involves many
-                  stages.
+                description: LastOperation captures the last operation status if task
+                  involves many stages.
                 properties:
                   description:
-                    description: A human readable message indicating details about
-                      the last operation.
+                    description: Description is a human readable message indicating
+                      details about the last operation.
                     type: string
                   lastTransitionTime:
                     description: LastTransitionTime records the timestamp of the most
@@ -143,15 +159,14 @@ spec:
                     type: string
                   phase:
                     description: Phase represents the current phase of the operation
-                      wrt the interface methods
+                      with respect to the interface methods.
                     type: string
                   state:
-                    description: Status of the last operation, one of pending, progress,
-                      completed, failed.
+                    description: State is the status of the last operation, one of
+                      pending, progress, completed, failed.
                     type: string
                 required:
                 - description
-                - lastTransitionTime
                 - phase
                 - state
                 type: object
