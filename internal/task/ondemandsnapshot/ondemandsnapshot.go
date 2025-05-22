@@ -104,7 +104,7 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 	}
 
 	url := fmt.Sprintf("http://%s.%s:%d/snapshot/%s", v1alpha1.GetClientServiceName(etcd.ObjectMeta), etcd.Namespace, ptr.Deref(etcd.Spec.Backup.Port, common.DefaultPortEtcdBackupRestore), o.config.Type)
-	if o.config.IsFinal {
+	if ptr.Deref(o.config.IsFinal, false) {
 		url += "?final=true"
 	}
 	req, err := http.NewRequest(http.MethodPost, url, nil)

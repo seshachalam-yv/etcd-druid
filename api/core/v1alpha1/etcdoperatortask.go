@@ -87,8 +87,8 @@ type EtcdOperatorTaskSpec struct {
 	// related resource(s) of the task once it has been completed.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="The ttlSecondsAfterFinished field in spec is immutable and cannot be changed after creation."
-	// +optional
-	TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`
+	// +kubebuilder:default:=3600
+	TTLSecondsAfterFinished int32 `json:"ttlSecondsAfterFinished,omitempty"`
 
 	// EtcdRef refers to the name and namespace of the corresponding
 	// Etcd owner for which the task has been invoked.
@@ -179,15 +179,37 @@ func (t *EtcdOperatorTask) IsMarkedForDeletion() bool {
 
 // TTLHasExpired returns true if the TTL after finished has expired.
 func (t *EtcdOperatorTask) HasTTLExpired() bool {
-	if t.Spec.TTLSecondsAfterFinished == nil || t.Status.InitiatedAt.IsZero() {
-		return false
+	return t.GetTimeToExpiry() <= 0
+}
+
+func (t *EtcdOperatorTask) GetTTL() time.Duration {
+	return time.Duration(t.Spec.TTLSecondsAfterFinished) * time.Second
+}
+
+// GetTimeToExpiry returns the remaining duration until the task's TTL expires.
+// If the task is not completed, it returns zero.
+// If LastTransitionTime is nil, uses InitiatedAt; if that is also nil, uses CreationTimestamp.
+func (t *EtcdOperatorTask) GetTimeToExpiry() time.Duration {
+	var baseTime time.Time
+	switch {
+	case t.Status.LastTransitionTime != nil:
+		baseTime = t.Status.LastTransitionTime.Time
+	case t.Status.InitiatedAt != nil:
+		baseTime = t.Status.InitiatedAt.Time
+	default:
+		// Fallback to CreationTimestamp if both LastTransitionTime and InitiatedAt are not set.
+		// This covers cases where the task transistioned to rejected state
+		// 	- has not yet transitioned to in-progress, since admit failed.
+		// 	- unsupported task type.
+		// Ensures a valid base time for TTL expiry calculation in all lifecycle states.
+		baseTime = t.ObjectMeta.CreationTimestamp.Time
 	}
-	if !t.IsCompleted() {
-		return false
+	expiry := baseTime.Add(t.GetTTL())
+	remaining := time.Now().UTC().Sub(expiry)
+	if remaining < 0 {
+		return 0
 	}
-	lastTransitionTime := t.Status.LastTransitionTime
-	expiry := lastTransitionTime.Add(time.Duration(*t.Spec.TTLSecondsAfterFinished) * time.Second)
-	return time.Now().After(expiry)
+	return remaining
 }
 
 type OnDemandSnapshotConfig struct {
