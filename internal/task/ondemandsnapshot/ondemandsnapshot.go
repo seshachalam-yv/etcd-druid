@@ -149,7 +149,10 @@ func (o *OnDemandSnapshotTask) Cleanup(ctx context.Context) *task.Result {
 func CheckEtcdReadiness(ctx context.Context, etcd *v1alpha1.Etcd) error {
 	for _, condition := range etcd.Status.Conditions {
 		if condition.Type == v1alpha1.ConditionTypeReady {
-			return nil
+			if condition.Status == v1alpha1.ConditionTrue {
+				return nil
+			}
+			return fmt.Errorf("etcd is not ready, condition: %s", condition.Message)
 		}
 	}
 	return fmt.Errorf("etcd is not ready")
