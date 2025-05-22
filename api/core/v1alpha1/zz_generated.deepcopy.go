@@ -646,11 +646,6 @@ func (in *EtcdOperatorTaskList) DeepCopyObject() runtime.Object {
 func (in *EtcdOperatorTaskSpec) DeepCopyInto(out *EtcdOperatorTaskSpec) {
 	*out = *in
 	in.Config.DeepCopyInto(&out.Config)
-	if in.TTLSecondsAfterFinished != nil {
-		in, out := &in.TTLSecondsAfterFinished, &out.TTLSecondsAfterFinished
-		*out = new(int32)
-		**out = **in
-	}
 	if in.EtcdRef != nil {
 		in, out := &in.EtcdRef, &out.EtcdRef
 		*out = new(EtcdReference)

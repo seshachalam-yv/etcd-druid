@@ -449,7 +449,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `config` _[EtcdOperatorTaskConfig](#etcdoperatortaskconfig)_ | Config defines the configuration for the EtcdOperatorTask.<br />Only one of the configurations can be specified at a time. |  | Required: \{\} <br /> |
-| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live (in seconds) to garbage collect the<br />related resource(s) of the task once it has been completed. |  | Minimum: 1 <br /> |
+| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live (in seconds) to garbage collect the<br />related resource(s) of the task once it has been completed. | 3600 | Minimum: 1 <br /> |
 | `etcdRef` _[EtcdReference](#etcdreference)_ | EtcdRef refers to the name and namespace of the corresponding<br />Etcd owner for which the task has been invoked. |  |  |
 
 

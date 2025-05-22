@@ -96,6 +96,7 @@ spec:
                     after creation.
                   rule: self == oldSelf
               ttlSecondsAfterFinished:
+                default: 3600
                 description: |-
                   TTLSecondsAfterFinished is the time-to-live (in seconds) to garbage collect the
                   related resource(s) of the task once it has been completed.
