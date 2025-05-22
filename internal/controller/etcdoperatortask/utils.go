@@ -6,6 +6,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
@@ -38,39 +39,41 @@ func (r *Reconciler) getTask(ctx context.Context, taskObjKey client.ObjectKey) (
 //
 // Returns an error if the status update fails.
 func (r *Reconciler) recordLastOperation(ctx context.Context, taskObjKey client.ObjectKey, phase v1alpha1.OperationPhase, state v1alpha1.OperationState) error {
-	task, err := r.getTask(ctx, taskObjKey)
-	if err != nil {
-		return err
-	}
-	now := &metav1.Time{Time: time.Now().UTC()}
-	desc := fmt.Sprintf("%s is in state %s for task %s", phase, state, taskObjKey.Name)
-
-	if task.Status.LastOperation == nil {
-		// Initialize LastOperation if not present
-		task.Status.LastOperation = &v1alpha1.EtcdOperatorLastOperation{
-			Phase:              phase,
-			State:              state,
-			LastTransitionTime: now,
-			Description:        desc,
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		task, err := r.getTask(ctx, taskObjKey)
+		if err != nil {
+			return err
 		}
-		return r.client.Status().Update(ctx, task)
-	}
+		now := &metav1.Time{Time: time.Now().UTC()}
+		desc := fmt.Sprintf("%s is in state %s for task %s", phase, state, taskObjKey.Name)
 
-	phaseChanged := task.Status.LastOperation.Phase != phase
-	stateChanged := task.Status.LastOperation.State != state
-	if phaseChanged {
-		task.Status.LastOperation.Phase = phase
-		task.Status.LastOperation.LastTransitionTime = now
-	}
-	if stateChanged {
-		task.Status.LastOperation.State = state
-	}
-	if phaseChanged || stateChanged {
-		// Only update status if there was a transition
-		task.Status.LastOperation.Description = desc
-		return r.client.Status().Update(ctx, task)
-	}
-	return nil
+		if task.Status.LastOperation == nil {
+			// Initialize LastOperation if not present
+			task.Status.LastOperation = &v1alpha1.EtcdOperatorLastOperation{
+				Phase:              phase,
+				State:              state,
+				LastTransitionTime: now,
+				Description:        desc,
+			}
+			return r.client.Status().Update(ctx, task)
+		}
+
+		phaseChanged := task.Status.LastOperation.Phase != phase
+		stateChanged := task.Status.LastOperation.State != state
+		if phaseChanged {
+			task.Status.LastOperation.Phase = phase
+			task.Status.LastOperation.LastTransitionTime = now
+		}
+		if stateChanged {
+			task.Status.LastOperation.State = state
+		}
+		if phaseChanged || stateChanged {
+			// Only update status if there was a transition
+			task.Status.LastOperation.Description = desc
+			return r.client.Status().Update(ctx, task)
+		}
+		return nil
+	})
 }
 
 // recordTaskState sets the task's status.State to the given state and updates LastTransitionTime if the state changes.
@@ -78,25 +81,27 @@ func (r *Reconciler) recordLastOperation(ctx context.Context, taskObjKey client.
 // If transitioning to InProgress, sets InitiatedAt if not already set.
 // Returns an error if the status update fails, or nil if no change is needed.
 func (r *Reconciler) recordTaskState(ctx context.Context, taskObjKey client.ObjectKey, state v1alpha1.TaskState) error {
-	task, err := r.getTask(ctx, taskObjKey)
-	if err != nil {
-		return err
-	}
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		task, err := r.getTask(ctx, taskObjKey)
+		if err != nil {
+			return err
+		}
 
-	stateChanged := task.Status.State == nil || *task.Status.State != state
-	if !stateChanged {
-		// No update needed if state is unchanged
-		return nil
-	}
+		stateChanged := task.Status.State == nil || *task.Status.State != state
+		if !stateChanged {
+			// No update needed if state is unchanged
+			return nil
+		}
 
-	now := &metav1.Time{Time: time.Now().UTC()}
-	if state == v1alpha1.TaskStateInProgress && task.Status.InitiatedAt == nil {
-		// Set InitiatedAt only on first transition to InProgress
-		task.Status.InitiatedAt = now
-	}
-	task.Status.State = &state
-	task.Status.LastTransitionTime = now
-	return r.client.Status().Update(ctx, task)
+		now := &metav1.Time{Time: time.Now().UTC()}
+		if state == v1alpha1.TaskStateInProgress && task.Status.InitiatedAt == nil {
+			// Set InitiatedAt only on first transition to InProgress
+			task.Status.InitiatedAt = now
+		}
+		task.Status.State = &state
+		task.Status.LastTransitionTime = now
+		return r.client.Status().Update(ctx, task)
+	})
 }
 
 // recordLastError appends an error to the LastErrors field in the task status.
@@ -104,23 +109,25 @@ func (r *Reconciler) recordTaskState(ctx context.Context, taskObjKey client.Obje
 // Maintains a maximum of 10 most recent errors (FIFO order: oldest errors are dropped).
 // Returns an error if the status update fails.
 func (r *Reconciler) recordLastError(ctx context.Context, taskObjKey client.ObjectKey, err error) error {
-	task, getErr := r.getTask(ctx, taskObjKey)
-	if getErr != nil {
-		return getErr
-	}
-	now := &metav1.Time{Time: time.Now().UTC()}
-	lastErrors := task.Status.LastErrors
-	if lastErrors == nil {
-		lastErrors = make([]v1alpha1.EtcdOperatorTaskLastError, 0, 10)
-	}
-	if len(lastErrors) >= 10 {
-		// Remove oldest error to maintain a max of 10
-		lastErrors = lastErrors[1:]
-	}
-	lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
-		Description: err.Error(),
-		ObservedAt:  *now,
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		task, getErr := r.getTask(ctx, taskObjKey)
+		if getErr != nil {
+			return getErr
+		}
+		now := &metav1.Time{Time: time.Now().UTC()}
+		lastErrors := task.Status.LastErrors
+		if lastErrors == nil {
+			lastErrors = make([]v1alpha1.EtcdOperatorTaskLastError, 0, 10)
+		}
+		if len(lastErrors) >= 10 {
+			// Remove oldest error to maintain a max of 10
+			lastErrors = lastErrors[1:]
+		}
+		lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
+			Description: err.Error(),
+			ObservedAt:  *now,
+		})
+		task.Status.LastErrors = lastErrors
+		return r.client.Status().Update(ctx, task)
 	})
-	task.Status.LastErrors = lastErrors
-	return r.client.Status().Update(ctx, task)
 }
