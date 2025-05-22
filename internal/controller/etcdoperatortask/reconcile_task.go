@@ -2,28 +2,21 @@ package etcdoperatortask
 
 import (
 	"context"
-	"fmt"
-	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
 	"github.com/gardener/etcd-druid/internal/task"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// TODO Move this to helper since it'll be used by delete step function as well.
-type StepFunction struct {
-	StepName string
-	StepFunc reconcileFn
-}
-
 // reconcileTask manages the lifecycle of an EtcdOperatorTask resource.
+// It executes a series of step functions to ensure the task is processed correctly.
 func (r *Reconciler) reconcileTask(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult {
-	// Use named step functions for better logging and extensibility
+	logger := taskHandler.Logger().WithValues("op", "reconcileTask")
+	logger.Info("Triggering task execution flow")
 	steps := []StepFunction{
 		{StepName: "ensureTaskFinalizer", StepFunc: r.ensureTaskFinalizer},
 		{StepName: "transitionToPendingState", StepFunc: r.transitionToPendingState},
@@ -31,7 +24,6 @@ func (r *Reconciler) reconcileTask(ctx context.Context, taskObjKey client.Object
 		{StepName: "transitionToInProgressState", StepFunc: r.transitionToInProgressState},
 		{StepName: "runTask", StepFunc: r.runTask},
 	}
-	logger := taskHandler.Logger()
 	for _, step := range steps {
 		logger.Info("Executing step", "step", step.StepName)
 		result := step.StepFunc(ctx, taskObjKey, taskHandler)
@@ -40,54 +32,58 @@ func (r *Reconciler) reconcileTask(ctx context.Context, taskObjKey client.Object
 			return result
 		}
 	}
-
-	task, err := r.getTask(ctx, taskObjKey)
-	if err != nil {
-		return ctrlutils.ReconcileWithError(err)
-	}
-	ttl := time.Duration(ptr.Deref(task.Spec.TTLSecondsAfterFinished, 600)) * time.Second
-	logger.Info("Reconciliation complete, requeueing after TTL", "ttl", ttl)
-	return ctrlutils.ReconcileAfter(ttl, "Task completed, waiting for TTL to expire")
+	logger.Info("Task execution flow completed")
+	return ctrlutils.ContinueReconcile()
 }
 
-// TODO: Evaluate if partialmeta is enough.
-// ensureTaskFinalizer adds the finalizer if not present.
+// ensureTaskFinalizer checks if the EtcdOperatorTask has the finalizer.
+// If not, it adds the finalizer and updates the task status.
 func (r *Reconciler) ensureTaskFinalizer(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
-	task := &v1alpha1.EtcdOperatorTask{}
-	if err := r.client.Get(ctx, taskObjKey, task); err != nil {
+	meta := &metav1.PartialObjectMetadata{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "EtcdOperatorTask",
+			APIVersion: v1alpha1.SchemeGroupVersion.String(),
+		},
+	}
+	meta.SetNamespace(taskObjKey.Namespace)
+	meta.SetName(taskObjKey.Name)
+	if err := r.client.Get(ctx, taskObjKey, meta); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
-	if controllerutil.ContainsFinalizer(task, FinalizerName) {
+	if controllerutil.ContainsFinalizer(meta, FinalizerName) {
 		return ctrlutils.ContinueReconcile()
 	}
-	controllerutil.AddFinalizer(task, FinalizerName)
-	if err := r.client.Update(ctx, task); err != nil {
+	controllerutil.AddFinalizer(meta, FinalizerName)
+	if err := r.client.Update(ctx, meta); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	return ctrlutils.ContinueReconcile()
 }
 
-// 1) mark state as pending
-// 2) set initiated at
-// transitionToPendingState sets the state to Pending if not already set.
+// transitionToPendingState sets the task.status.state to Pending if not already set.
 func (r *Reconciler) transitionToPendingState(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
 	task, err := r.getTask(ctx, taskObjKey)
 	if err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
+
 	if task.Status.State != nil {
 		return ctrlutils.ContinueReconcile()
 	}
-	if err := r.updateState(ctx, taskObjKey, v1alpha1.TaskStatePending); err != nil {
+	// Set the task state to Pending
+	// and update the LastTransitionTime.
+	if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStatePending); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	return ctrlutils.ContinueReconcile()
 }
 
-// TODO: Come up with implementation for this.
-// 1) Set LastOperation {phase: "admit", state: "inProgress", lastTransitionTime: time.Now(), description: "admit process for task {taskName}"}
-// 2) Call only if the LastOperation is not set.
-// admitTask runs the admission logic for the task.
+// admitTask checks if the task is in a pending state.
+// If so, it updates the LastOperation to admit and invokes the task handler's Admit method.
+// If the admit operation is in progress, it requeues the task.
+// If the admit operation fails, it updates the task state to Rejected and sets the LastOperation to failed.
+// If the admit operation succeeds, it updates the task.status.state to InProgress.
+// If the task is already in a completed state, it skips the admit operation.
 func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult {
 	task, err := r.getTask(ctx, taskObjKey)
 	if err != nil {
@@ -96,12 +92,16 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 	if task.Status.State != nil && *task.Status.State != v1alpha1.TaskStatePending {
 		return ctrlutils.ContinueReconcile()
 	}
-	if err := r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateInProgress); err != nil {
+	if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateInProgress); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	result := taskHandler.Admit(ctx)
 	if !result.Completed {
 		if result.Error != nil {
+			err = r.recordLastError(ctx, taskObjKey, result.Error)
+			if err != nil {
+				return ctrlutils.ReconcileWithError(err)
+			}
 			return ctrlutils.ReconcileWithError(result.Error)
 		}
 		requeue := result.RequeueAfter
@@ -112,172 +112,88 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 	}
 	if result.Error != nil {
 		// Admission failed, mark as rejected
-		if err := r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateFailed); err != nil {
+		err = r.recordLastError(ctx, taskObjKey, result.Error)
+		if err != nil {
 			return ctrlutils.ReconcileWithError(err)
 		}
-		if err := r.updateState(ctx, taskObjKey, v1alpha1.TaskStateRejected); err != nil {
+		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateFailed); err != nil {
 			return ctrlutils.ReconcileWithError(err)
 		}
-		ttl := time.Duration(ptr.Deref(task.Spec.TTLSecondsAfterFinished, 600)) * time.Second
-		return ctrlutils.ReconcileAfter(ttl, "Task failed to admit")
+		if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateRejected); err != nil {
+			return ctrlutils.ReconcileWithError(err)
+		}
+		return ctrlutils.ReconcileAfter(task.GetTimeToExpiry(), "Task failed to admit")
 	}
 	return ctrlutils.ContinueReconcile()
 }
 
-// state -> inProgress
-// transitionToInProgressState sets the state to InProgress if currently Pending.
+// transitionToInProgressState sets the task.status.state to InProgress if not already set.
 func (r *Reconciler) transitionToInProgressState(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
 	task, err := r.getTask(ctx, taskObjKey)
 	if err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	if task.Status.State != nil && *task.Status.State == v1alpha1.TaskStatePending {
-		if err := r.updateState(ctx, taskObjKey, v1alpha1.TaskStateInProgress); err != nil {
+		if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateInProgress); err != nil {
 			return ctrlutils.ReconcileWithError(err)
 		}
 	}
 	return ctrlutils.ContinueReconcile()
 }
 
-// TODO: Implement this.
-// 1) Set LastOperation {phase: "run", state: "inProgress", lastTransitionTime: time.Now(), description: "running task {taskName}"} only if previous phase was admit. Skip if already set.
-// 2) Call the task handler to run the task.
-// runTask executes the main logic for the task.
+// runTask executes the task handler's Run method.
+// It updates the task status based on the result of the run operation.
+// If the task is completed, it updates the LastOperation to completed or failed.
+// If the task is still in progress, it requeues the task for further processing.
+// If the task fails, it updates the task status to failed and sets the LastOperation to failed.
+// If the task succeeds, it updates the task status to succeeded and sets the LastOperation to completed.
+// If the task is already in a completed state, it skips the run operation.
 func (r *Reconciler) runTask(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult {
 	task, err := r.getTask(ctx, taskObjKey)
 	if err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
-	if err := r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateInProgress); err != nil {
+	if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateInProgress); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	result := taskHandler.Run(ctx)
+
 	if result.Completed {
 		if result.Error != nil {
 			// Task failed
-			if err := r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateFailed); err != nil {
+			err = r.recordLastError(ctx, taskObjKey, result.Error)
+			if err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
-			if err := r.updateState(ctx, taskObjKey, v1alpha1.TaskStateFailed); err != nil {
+			if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateFailed); err != nil {
+				return ctrlutils.ReconcileWithError(err)
+			}
+			if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateFailed); err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
 		} else {
 			// Task succeeded
-			if err := r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateCompleted); err != nil {
+			if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateCompleted); err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
-			if err := r.updateState(ctx, taskObjKey, v1alpha1.TaskStateSucceeded); err != nil {
+			if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateSucceeded); err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
 		}
-		ttl := time.Duration(ptr.Deref(task.Spec.TTLSecondsAfterFinished, 600)) * time.Second
-		return ctrlutils.ReconcileAfter(ttl, "Task completed, waiting for TTL to expire")
+
+		return ctrlutils.ReconcileAfter(task.GetTimeToExpiry(), "Task completed, waiting for TTL to expire")
 	}
+
 	if result.Error != nil {
-		return ctrlutils.ReconcileWithError(result.Error)
+		err = r.recordLastError(ctx, taskObjKey, result.Error)
+		if err != nil {
+			return ctrlutils.ReconcileWithError(err)
+		}
 	}
+
 	requeue := result.RequeueAfter
 	if requeue == 0 {
 		requeue = r.config.RequeueInterval
 	}
 	return ctrlutils.ReconcileAfter(requeue, "Task in progress")
 }
-
-// TODO: Move to helper
-// Method to get the task object.
-// getTask fetches the EtcdOperatorTask resource by key.
-func (r *Reconciler) getTask(ctx context.Context, taskObjKey client.ObjectKey) (*v1alpha1.EtcdOperatorTask, error) {
-	task := &v1alpha1.EtcdOperatorTask{}
-	if err := r.client.Get(ctx, taskObjKey, task); err != nil {
-		return nil, err
-	}
-	return task, nil
-}
-
-// function to update the last operation field in the status.
-// updateLastOperation updates the last operation status in the task.
-func (r *Reconciler) updateLastOperation(ctx context.Context, taskObjKey client.ObjectKey, phase v1alpha1.OperationPhase, state v1alpha1.OperationState) error {
-	task, err := r.getTask(ctx, taskObjKey)
-	if err != nil {
-		return err
-	}
-	now := metav1.Now()
-	if task.Status.LastOperation == nil {
-		task.Status.LastOperation = &v1alpha1.EtcdOperatorLastOperation{
-			Phase:              phase,
-			State:              state,
-			LastTransitionTime: &now,
-			Description:        fmt.Sprintf("%s is in state %s for task %s", phase, state, taskObjKey.Name),
-		}
-	} else {
-		changed := false
-		if task.Status.LastOperation.Phase != phase {
-			task.Status.LastOperation.Phase = phase
-			changed = true
-		}
-		if task.Status.LastOperation.State != state {
-			task.Status.LastOperation.State = state
-			changed = true
-		}
-		if changed {
-			task.Status.LastOperation.LastTransitionTime = &now
-			task.Status.LastOperation.Description = fmt.Sprintf("%s is in state %s for task %s", phase, state, taskObjKey.Name)
-		}
-	}
-	return r.client.Status().Update(ctx, task)
-}
-
-// updateState updates the state and sets InitiatedAt if entering InProgress.
-func (r *Reconciler) updateState(ctx context.Context, taskObjKey client.ObjectKey, state v1alpha1.TaskState) error {
-	task, err := r.getTask(ctx, taskObjKey)
-	if err != nil {
-		return err
-	}
-	var changed bool
-	if task.Status.State == nil {
-		changed = true
-	} else if *task.Status.State != state {
-		changed = true
-	}
-	if !changed {
-		return nil
-	}
-	if state == v1alpha1.TaskStateInProgress && task.Status.InitiatedAt == nil {
-		task.Status.InitiatedAt = &metav1.Time{Time: time.Now()}
-	}
-
-	task.Status.State = &state
-	task.Status.LastTransitionTime = &metav1.Time{Time: time.Now()}
-	return r.client.Status().Update(ctx, task)
-}
-
-func (r *Reconciler) updateLastError(ctx context.Context, taskObjKey client.ObjectKey, err error) error {
-	task, err := r.getTask(ctx, taskObjKey)
-	if err != nil {
-		return err
-	}
-	now := metav1.Now()
-	lastErrors := task.Status.LastErrors
-
-	if lastErrors == nil {
-		lastErrors = []v1alpha1.EtcdOperatorTaskLastError{}
-	}
-	if len(lastErrors) >= 10 {
-		lastErrors = lastErrors[1:]
-	}
-
-	lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
-		// Code:        v1alpha1.ErrorCode(err).String(),
-		Description: err.Error(),
-		ObservedAt:  now,
-	})
-	task.Status.LastErrors = lastErrors
-	return r.client.Status().Update(ctx, task)
-}
-
-// func (r *Reconciler) getLastError(task *v1alpha1.EtcdOperatorTask) druidv1 {
-// 	if len(task.Status.LastErrors) == 0 {
-// 		return nil
-// 	}
-// 	return task.Status.LastErrors[0].Error
-// }

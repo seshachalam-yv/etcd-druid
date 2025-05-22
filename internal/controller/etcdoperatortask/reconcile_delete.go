@@ -3,25 +3,24 @@ package etcdoperatortask
 import (
 	"context"
 	"time"
+
+	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
 	"github.com/gardener/etcd-druid/internal/task"
-	"github.com/gardener/etcd-druid/api/core/v1alpha1"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // triggerDeletionFlow handles the deletion flow for EtcdOperatorTask resources.
 func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.Handler, task *v1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
-	logger := r.logger.WithValues("namespace", task.Namespace, "name", task.Name)
-	logger.Info("Starting deletion flow for EtcdOperatorTask")
+	logger := taskHandler.Logger()
+	logger.Info("Triggering deletion flow", "completed", task.IsCompleted(), "markedForDeletion", task.IsMarkedForDeletion())
 
 	// If task is completed but not marked for deletion, wait for TTL expiry
 	if task.IsCompleted() {
 		if !task.HasTTLExpired() {
-			logger.Info("Task completed but TTL not expired yet, will requeue after TTL", "ttlSeconds", ptr.Deref(task.Spec.TTLSecondsAfterFinished, 600))
-
-			return ctrlutils.ReconcileAfter(time.Duration(ptr.Deref(task.Spec.TTLSecondsAfterFinished, 600))*time.Second, "Task completed, waiting for TTL to expire")
+			logger.Info("Task completed but TTL not expired yet, will requeue after TTL", "ttlSeconds", task.Spec.TTLSecondsAfterFinished)
+			return ctrlutils.ReconcileAfter(time.Duration(task.Spec.TTLSecondsAfterFinished)*time.Second, "Task completed, waiting for TTL to expire")
 		}
 		logger.Info("Task TTL expired, proceeding with deletion")
 	}
@@ -29,15 +28,15 @@ func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.H
 	deletionStepFns := []StepFunction{
 		{
 			StepName: "CleanupTaskResources",
-			StepFunc:   r.cleanupTaskResources,
+			StepFunc: r.cleanupTaskResources,
 		},
 		{
 			StepName: "RemoveTaskFinalizer",
-			StepFunc:   r.removeTaskFinalizer,
+			StepFunc: r.removeTaskFinalizer,
 		},
 		{
 			StepName: "RemoveTask",
-			StepFunc:   r.removeTask,
+			StepFunc: r.removeTask,
 		},
 	}
 	for i, fn := range deletionStepFns {
@@ -56,18 +55,31 @@ func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.H
 func (r *Reconciler) cleanupTaskResources(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult {
 	logger := r.logger.WithValues("namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	logger.Info("Cleaning up task resources")
-	r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateInProgress)
+	r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateInProgress)
 	result := taskHandler.Cleanup(ctx)
 	if result != nil && result.Error != nil {
 		return ctrlutils.ReconcileWithError(result.Error)
 	}
 	if result != nil && result.Completed {
 		if result.Error != nil {
-			r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateFailed)
+			err := r.recordLastError(ctx, taskObjKey, result.Error)
+			if err != nil {
+				return ctrlutils.ReconcileWithError(err)
+			}
+			err = r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateFailed)
+			if err != nil {
+				return ctrlutils.ReconcileWithError(err)
+			}
 			return ctrlutils.ReconcileWithError(result.Error)
 		}
-		r.updateLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted)
+		r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted)
 	} else {
+		if result.Error != nil {
+			err := r.recordLastError(ctx, taskObjKey, result.Error)
+			if err != nil {
+				return ctrlutils.ReconcileWithError(err)
+			}
+		}
 	}
 	return ctrlutils.ContinueReconcile()
 }
