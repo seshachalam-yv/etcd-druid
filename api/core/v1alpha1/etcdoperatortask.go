@@ -205,7 +205,7 @@ func (t *EtcdOperatorTask) GetTimeToExpiry() time.Duration {
 		baseTime = t.ObjectMeta.CreationTimestamp.Time
 	}
 	expiry := baseTime.Add(t.GetTTL())
-	remaining := time.Now().UTC().Sub(expiry)
+	remaining := expiry.Sub(time.Now().UTC())
 	if remaining < 0 {
 		return 0
 	}
