@@ -6,7 +6,6 @@
 package etcdoperatortask
 
 import (
-	"fmt"
 	"time"
 
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
@@ -82,7 +81,6 @@ func (r *Reconciler) hasReconcileAnnotation() predicate.Predicate {
 	// It is possible that during the previous reconcile one of the steps errored out. This gets captured in etcd.Status.LastOperation.
 	// Update of status will generate an event. This event should not trigger a reconcile especially when the reconcile annotation has still
 	// not been removed (since the last reconcile is not yet successfully completed).
-	fmt.Println("hasReconcileAnnotation**********")
 	return predicate.Funcs{
 		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
 			newEtcdOperatorTask, ok := updateEvent.ObjectNew.(*druidv1alpha1.EtcdOperatorTask)

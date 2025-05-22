@@ -2,7 +2,6 @@ package etcdoperatortask
 
 import (
 	"context"
-	"time"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
@@ -20,7 +19,7 @@ func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.H
 	if task.IsCompleted() {
 		if !task.HasTTLExpired() {
 			logger.Info("Task completed but TTL not expired yet, will requeue after TTL", "ttlSeconds", task.Spec.TTLSecondsAfterFinished)
-			return ctrlutils.ReconcileAfter(time.Duration(task.Spec.TTLSecondsAfterFinished)*time.Second, "Task completed, waiting for TTL to expire")
+			return ctrlutils.ReconcileAfter(task.GetTimeToExpiry(), "Task completed, waiting for TTL to expire")
 		}
 		logger.Info("Task TTL expired, proceeding with deletion")
 	}
@@ -39,11 +38,11 @@ func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.H
 			StepFunc: r.removeTask,
 		},
 	}
-	for i, fn := range deletionStepFns {
-		logger.Info("Executing deletion step", "stepIndex", i)
+	for stepName, fn := range deletionStepFns {
+		logger.Info("Executing deletion step", "stepName", stepName)
 		result := fn.StepFunc(ctx, client.ObjectKeyFromObject(task), taskHandler)
 		if ctrlutils.ShortCircuitReconcileFlow(result) {
-			logger.Info("Short-circuiting deletion flow", "stepIndex", i, "result", result)
+			logger.Info("Short-circuiting deletion flow", "stepName", stepName, "result", result)
 			return result
 		}
 	}

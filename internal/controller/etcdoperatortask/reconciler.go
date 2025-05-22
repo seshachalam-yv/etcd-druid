@@ -91,7 +91,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	if task.IsCompleted() {
-		return reconcile.Result{RequeueAfter: task.GetTimeToExpiry()}, nil
+		ttl := task.GetTimeToExpiry()
+		if ttl > 0 {
+			return reconcile.Result{RequeueAfter: ttl}, nil
+		}
+		// TTL expired, trigger deletion immediately
+		return r.triggerDeletionFlow(ctx, taskHandlerInstance, task).ReconcileResult()
 	}
 	return reconcile.Result{}, nil
 }

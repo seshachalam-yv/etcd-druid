@@ -2,6 +2,7 @@ package etcdoperatortask
 
 import (
 	"context"
+	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,7 +55,8 @@ func (r *Reconciler) ensureTaskFinalizer(ctx context.Context, taskObjKey client.
 		return ctrlutils.ContinueReconcile()
 	}
 	controllerutil.AddFinalizer(meta, FinalizerName)
-	if err := r.client.Update(ctx, meta); err != nil {
+	patch := client.MergeFrom(meta.DeepCopy())
+	if err := r.client.Patch(ctx, meta, patch); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	return ctrlutils.ContinueReconcile()
@@ -96,6 +98,11 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 		return ctrlutils.ReconcileWithError(err)
 	}
 	result := taskHandler.Admit(ctx)
+	if result == nil {
+		err := fmt.Errorf("Admit returned nil TaskResult; this is a bug in the TaskHandler implementation")
+		_ = r.recordLastError(ctx, taskObjKey, err)
+		return ctrlutils.ReconcileWithError(err)
+	}
 	if !result.Completed {
 		if result.Error != nil {
 			err = r.recordLastError(ctx, taskObjKey, result.Error)
@@ -128,15 +135,22 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 }
 
 // transitionToInProgressState sets the task.status.state to InProgress if not already set.
-func (r *Reconciler) transitionToInProgressState(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
+func (r *Reconciler) transitionToInProgressState(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult {
+	logger := taskHandler.Logger().WithValues("op", "transitionToInProgressState")
 	task, err := r.getTask(ctx, taskObjKey)
 	if err != nil {
+		logger.Error(err, "Failed to get task")
 		return ctrlutils.ReconcileWithError(err)
 	}
+
 	if task.Status.State != nil && *task.Status.State == v1alpha1.TaskStatePending {
+		logger.Info("Transitioning task state from Pending to InProgress")
 		if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateInProgress); err != nil {
+			logger.Error(err, "Failed to record task state as InProgress")
 			return ctrlutils.ReconcileWithError(err)
 		}
+	} else {
+		logger.Info("Task state is not Pending, skipping transition", "currentState", task.Status.State)
 	}
 	return ctrlutils.ContinueReconcile()
 }
