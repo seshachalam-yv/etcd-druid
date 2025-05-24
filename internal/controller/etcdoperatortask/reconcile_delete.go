@@ -17,6 +17,7 @@ func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.H
 
 	// If task is completed but not marked for deletion, wait for TTL expiry
 	if task.IsCompleted() {
+
 		if !task.HasTTLExpired() {
 			logger.Info("Task completed but TTL not expired yet, will requeue after TTL", "ttlSeconds", task.Spec.TTLSecondsAfterFinished)
 			return ctrlutils.ReconcileAfter(task.GetTimeToExpiry(), "Task completed, waiting for TTL to expire")
@@ -54,7 +55,27 @@ func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.H
 func (r *Reconciler) cleanupTaskResources(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult {
 	logger := r.logger.WithValues("namespace", taskObjKey.Namespace, "name", taskObjKey.Name)
 	logger.Info("Cleaning up task resources")
+
+	task, err := r.getTask(ctx, taskObjKey)
+	if err != nil {
+		return ctrlutils.ReconcileWithError(err)
+	}
+
+	if task.Status.State != nil && *task.Status.State == v1alpha1.TaskStateRejected {
+		logger.Info("Task is rejected, skipping cleanup")
+		// no-op cleanup
+		// Cases where task is rejected:
+		// 1. Task is not supported by the controller
+		// 2. Task admit failed
+		// In these cases, we don't want to call the cleanup method of the task handler. Since there is no cleanup to be done, we can skip this step.
+		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted); err != nil {
+			return ctrlutils.ReconcileWithError(err)
+		}
+		return ctrlutils.ContinueReconcile()
+	}
+
 	r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateInProgress)
+
 	result := taskHandler.Cleanup(ctx)
 	if result != nil && result.Error != nil {
 		return ctrlutils.ReconcileWithError(result.Error)
