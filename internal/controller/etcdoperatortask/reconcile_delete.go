@@ -68,13 +68,13 @@ func (r *Reconciler) cleanupTaskResources(ctx context.Context, taskObjKey client
 		// 1. Task is not supported by the controller
 		// 2. Task admit failed
 		// In these cases, we don't want to call the cleanup method of the task handler. Since there is no cleanup to be done, we can skip this step.
-		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted); err != nil {
+		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted,""); err != nil {
 			return ctrlutils.ReconcileWithError(err)
 		}
 		return ctrlutils.ContinueReconcile()
 	}
 
-	r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateInProgress)
+	r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateInProgress, "")
 
 	result := taskHandler.Cleanup(ctx)
 	if result != nil && result.Error != nil {
@@ -86,13 +86,13 @@ func (r *Reconciler) cleanupTaskResources(ctx context.Context, taskObjKey client
 			if err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
-			err = r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateFailed)
+			err = r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateFailed, result.Description)
 			if err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
 			return ctrlutils.ReconcileWithError(result.Error)
 		}
-		r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted)
+		r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted, result.Description)
 	} else {
 		if result.Error != nil {
 			err := r.recordLastError(ctx, taskObjKey, result.Error)

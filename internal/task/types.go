@@ -8,6 +8,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+    AdmitOperation = "Admit"
+    RunOperation = "Run"
+    CleanupOperation = "Cleanup"
+)
+
+// Result defines the result of a task execution.
 type Result struct {
     Description string
     Error error
@@ -17,7 +24,7 @@ type Result struct {
 
 // OperatorTask defines the interface for task execution.
 type Handler interface {
-    EtcdReference() types.NamespacedName // based on if etcdReference is set in the spec.
+    EtcdReference() types.NamespacedName
     Name() string
     Logger() logr.Logger
     // Checks if the task is permitted to run. This is a one-time gate; once passed, it is not checked again for the same task execution.

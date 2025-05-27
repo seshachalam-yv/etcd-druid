@@ -30,8 +30,15 @@ func Register(mgr ctrl.Manager, config *Config) error {
 	}
 	// Add EtcdOperatorTask webhook to the manager
 	if config.EtcdOperatorTask.Enabled {
+		etcdOperatorTaskWebhook, err := etcdoperatortask.NewHandler(
+			mgr,
+			config.EtcdOperatorTask,
+		)
+		if err != nil {
+			return err
+		}
 		slog.Info("Registering EtcdOperatorTask Webhook with manager")
-		if err := etcdoperatortask.RegisterWithManager(mgr); err != nil {
+		if err := etcdOperatorTaskWebhook.RegisterWithManager(mgr); err != nil {
 			return err
 		}
 	}

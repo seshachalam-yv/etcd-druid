@@ -2,6 +2,7 @@ package etcdoperatortask
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
+	druiderr "github.com/gardener/etcd-druid/internal/errors"
 )
 
 // getTask fetches the EtcdOperatorTask resource for the given object key.
@@ -38,14 +40,16 @@ func (r *Reconciler) getTask(ctx context.Context, taskObjKey client.ObjectKey) (
 // The Description is always updated to reflect the current operation.
 //
 // Returns an error if the status update fails.
-func (r *Reconciler) recordLastOperation(ctx context.Context, taskObjKey client.ObjectKey, phase v1alpha1.OperationPhase, state v1alpha1.OperationState) error {
+func (r *Reconciler) recordLastOperation(ctx context.Context, taskObjKey client.ObjectKey, phase v1alpha1.OperationPhase, state v1alpha1.OperationState, description string) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		task, err := r.getTask(ctx, taskObjKey)
 		if err != nil {
 			return err
 		}
 		now := &metav1.Time{Time: time.Now().UTC()}
-		desc := fmt.Sprintf("%s is in state %s for task %s", phase, state, taskObjKey.Name)
+		if description == "" {
+			description = fmt.Sprintf("%s is in state %s for task %s", phase, state, taskObjKey.Name)
+		}
 
 		if task.Status.LastOperation == nil {
 			// Initialize LastOperation if not present
@@ -53,7 +57,7 @@ func (r *Reconciler) recordLastOperation(ctx context.Context, taskObjKey client.
 				Phase:              phase,
 				State:              state,
 				LastTransitionTime: now,
-				Description:        desc,
+				Description:        description,
 			}
 			return r.client.Status().Update(ctx, task)
 		}
@@ -69,7 +73,7 @@ func (r *Reconciler) recordLastOperation(ctx context.Context, taskObjKey client.
 		}
 		if phaseChanged || stateChanged {
 			// Only update status if there was a transition
-			task.Status.LastOperation.Description = desc
+			task.Status.LastOperation.Description = description
 			return r.client.Status().Update(ctx, task)
 		}
 		return nil
@@ -104,6 +108,21 @@ func (r *Reconciler) recordTaskState(ctx context.Context, taskObjKey client.Obje
 	})
 }
 
+func MapToLastError(err error) *v1alpha1.LastError {
+	druidErr := &druiderr.DruidError{}
+	if errors.As(err, &druidErr) {
+		desc := fmt.Sprintf("Operation: %s, Code: %s message: %s", druidErr.Operation, druidErr.Code, druidErr.Message)
+		if druidErr.Cause != nil {
+			desc += fmt.Sprintf(", cause: %s", druidErr.Cause.Error())
+		}
+		return &v1alpha1.LastError{
+			Code:        druidErr.Code,
+			Description: desc,
+		}
+	}
+	return nil
+}
+
 // recordLastError appends an error to the LastErrors field in the task status.
 //
 // Maintains a maximum of 10 most recent errors (FIFO order: oldest errors are dropped).
@@ -120,13 +139,23 @@ func (r *Reconciler) recordLastError(ctx context.Context, taskObjKey client.Obje
 			lastErrors = make([]v1alpha1.EtcdOperatorTaskLastError, 0, 10)
 		}
 		if len(lastErrors) >= 10 {
-			// Remove oldest error to maintain a max of 10
 			lastErrors = lastErrors[1:]
 		}
-		lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
-			Description: err.Error(),
-			ObservedAt:  *now,
-		})
+
+		// Use MapToLastError to extract code/description if it's a DruidError
+		mapped := MapToLastError(err)
+		if mapped != nil {
+			lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
+				Code:        mapped.Code,
+				Description: mapped.Description,
+				ObservedAt:  *now,
+			})
+		} else {
+			lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
+				Description: err.Error(),
+				ObservedAt:  *now,
+			})
+		}
 		task.Status.LastErrors = lastErrors
 		return r.client.Status().Update(ctx, task)
 	})

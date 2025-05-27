@@ -94,7 +94,7 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 	if task.Status.State != nil && *task.Status.State != v1alpha1.TaskStatePending {
 		return ctrlutils.ContinueReconcile()
 	}
-	if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateInProgress); err != nil {
+	if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateInProgress, ""); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	result := taskHandler.Admit(ctx)
@@ -123,7 +123,7 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 		if err != nil {
 			return ctrlutils.ReconcileWithError(err)
 		}
-		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateFailed); err != nil {
+		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseAdmit, v1alpha1.OperationStateFailed, result.Description); err != nil {
 			return ctrlutils.ReconcileWithError(err)
 		}
 		if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateRejected); err != nil {
@@ -167,7 +167,7 @@ func (r *Reconciler) runTask(ctx context.Context, taskObjKey client.ObjectKey, t
 	if err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
-	if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateInProgress); err != nil {
+	if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateInProgress, ""); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
 	result := taskHandler.Run(ctx)
@@ -179,7 +179,7 @@ func (r *Reconciler) runTask(ctx context.Context, taskObjKey client.ObjectKey, t
 			if err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
-			if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateFailed); err != nil {
+			if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateFailed, result.Description); err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
 			if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateFailed); err != nil {
@@ -187,7 +187,7 @@ func (r *Reconciler) runTask(ctx context.Context, taskObjKey client.ObjectKey, t
 			}
 		} else {
 			// Task succeeded
-			if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateCompleted); err != nil {
+			if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseRunning, v1alpha1.OperationStateCompleted, result.Description); err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
 			if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateSucceeded); err != nil {

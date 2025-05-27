@@ -14,7 +14,11 @@ const (
 )
 
 type Config struct {
+	// Enabled indicates whether the EtcdOperatorTask validating webhook is enabled.
 	Enabled bool
+	// ExemptServiceAccounts is a list of service accounts that are exempt from EtcdOperatorTask validating webhook checks.
+	ExemptServiceAccounts []string
+	// todo: Check if ReconcilerServiceAccount is needed
 }
 
 func InitFromFlags(fs *flag.FlagSet, cfg *Config) {

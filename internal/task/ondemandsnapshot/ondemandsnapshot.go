@@ -14,8 +14,24 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	druiderr "github.com/gardener/etcd-druid/internal/errors"
+
 )
 
+const (
+	// Error in case of fetching etcd object. Reason could be internal error
+	ErrGetEtcd v1alpha1.ErrorCode = "ERR_GET_ETCD" 
+	// Error in case of etcd not ready
+	ErrEtcdNotReady v1alpha1.ErrorCode = "ERR_ETCD_NOT_READY"
+	// Error in case backup is not enabled
+	ErrBackupNotEnabled v1alpha1.ErrorCode = "ERR_BACKUP_NOT_ENABLED"
+	// Failure in creating http request
+	ErrCreateHTTPRequest v1alpha1.ErrorCode = "ERR_CREATE_HTTP_REQUEST"
+	// Failure in executing http request
+	ErrExecuteHTTPRequest v1alpha1.ErrorCode = "ERR_EXECUTE_HTTP_REQUEST"
+	// Failure in creating snapshot
+	ErrCreateSnapshot v1alpha1.ErrorCode = "ERR_CREATE_SNAPSHOT"
+)
 type OnDemandSnapshotTask struct {
 	client        client.Client
 	logger        logr.Logger
@@ -50,16 +66,13 @@ func (o *OnDemandSnapshotTask) Logger() logr.Logger {
 	return o.logger
 }
 
-// Conditions:
-// 1) Backup should be enabled
-// 2) TODO: Duplicate check via admission controller.
-// 3) Add function to check quorum in helper
 func (o *OnDemandSnapshotTask) Admit(ctx context.Context) *task.Result {
 	var etcd v1alpha1.Etcd
 	if err := o.client.Get(ctx, o.EtcdReference(), &etcd); err != nil {
+
 		return &task.Result{
-			Description: "Failed to get etcd object",
-			Error:       err,
+			Description: "Admit Operation: Failed to get etcd object",
+			Error:       druiderr.WrapError(err, ErrGetEtcd, task.AdmitOperation, "failed to get etcd object"),
 			Completed:   false,
 		}
 	}
@@ -67,16 +80,16 @@ func (o *OnDemandSnapshotTask) Admit(ctx context.Context) *task.Result {
 	isBackupEnabled := etcd.IsBackupStoreEnabled()
 	if !isBackupEnabled {
 		return &task.Result{
-			Description: "Backup is not enabled for etcd",
-			Error:       fmt.Errorf("backup is not enabled for etcd"),
+			Description: "Admit Operation: Backup is not enabled for etcd",
+			Error:       druiderr.WrapError(fmt.Errorf("backup is not enabled for etcd"), ErrBackupNotEnabled, task.AdmitOperation, "backup is not enabled for etcd"),
 			Completed:   true,
 		}
 	}
 
 	if err := CheckEtcdReadiness(ctx, &etcd); err != nil {
 		return &task.Result{
-			Description: "Etcd is not ready",
-			Error:       fmt.Errorf("etcd is not ready"),
+			Description: "Admit Operation: Etcd is not ready",
+			Error:       druiderr.WrapError(err, ErrEtcdNotReady, task.AdmitOperation, "etcd is not ready"),
 			Completed:   true,
 		}
 	}
@@ -90,15 +103,15 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 	etcd := &v1alpha1.Etcd{}
 	if err := o.client.Get(ctx, o.EtcdReference(), etcd); err != nil {
 		return &task.Result{
-			Description: "Failed to get etcd object",
-			Error:       err,
+			Description: "Run Operation: Failed to get etcd object",
+			Error:       druiderr.WrapError(err, ErrGetEtcd, task.RunOperation, "failed to get etcd object"),
 			Completed:   false,
 		}
 	}
 	if err := CheckEtcdReadiness(ctx, etcd); err != nil {
 		return &task.Result{
-			Description: "Etcd is not ready",
-			Error:       fmt.Errorf("etcd is not ready"),
+			Description: "Run Operation: Etcd is not ready",
+			Error:       druiderr.WrapError(err, ErrEtcdNotReady, task.RunOperation, "etcd is not ready"),
 			Completed:   true,
 		}
 	}
@@ -110,8 +123,8 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
 		return &task.Result{
-			Description: "Failed to create HTTP request",
-			Error:       err,
+			Description: "Run Operation: Failed to create HTTP request",
+			Error:       druiderr.WrapError(err, ErrCreateHTTPRequest, task.RunOperation, "failed to create HTTP request"),
 			Completed:   false,
 		}
 	}
@@ -120,7 +133,7 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return &task.Result{
-			Description: "Failed to execute HTTP request",
+			Description: "Run Operation: Failed to execute HTTP request",
 			Error:       err,
 			Completed:   false,
 		}
@@ -128,8 +141,8 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return &task.Result{
-			Description: "Failed to create snapshot",
-			Error:       fmt.Errorf("failed to create snapshot, status code: %d", resp.StatusCode),
+			Description: "Run Operation: Failed to create snapshot",
+			Error:       druiderr.WrapError(fmt.Errorf("failed to create snapshot, status code: %d", resp.StatusCode), ErrCreateSnapshot, task.RunOperation, "failed to create snapshot"),
 			Completed:   true,
 		}
 	}

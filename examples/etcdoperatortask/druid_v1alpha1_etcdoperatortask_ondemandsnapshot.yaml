@@ -9,7 +9,8 @@ spec:
     namespace: default
   config:
     onDemandSnapshotConfig:
-      type: full
+      type: full #values: full, delta
       timeoutSeconds: 60
+      isFinal: true
     
   ttlSecondsAfterFinished: 60
