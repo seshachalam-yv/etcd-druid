@@ -1,4 +1,4 @@
-package etcdoperatortask
+package etcdopstaskprotection
 import (
 	"context"
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (h *Handler) handleOnDemandSnapshot(ctx context.Context, task *druidv1alpha1.EtcdOperatorTask) admission.Response {
+func (h *Handler) handleOnDemandSnapshot(ctx context.Context, task *druidv1alpha1.EtcdOpsTask) admission.Response {
 	// Ensure the Etcd Object exists and is healthy
 	etcd := &druidv1alpha1.Etcd{}
 	err := h.client.Get(ctx, client.ObjectKey{
@@ -40,14 +40,14 @@ func (h *Handler) handleOnDemandSnapshot(ctx context.Context, task *druidv1alpha
 		return admission.Denied("spec.config.onDemandSnapshotConfig.type is delta, so spec.config.onDemandSnapshotConfig.isFinal cannot be true")
 	}
 	// Duplicate CR check
-	var etcdoperatortaskList druidv1alpha1.EtcdOperatorTaskList
-	err = h.client.List(ctx, &etcdoperatortaskList, client.InNamespace(task.Namespace))
+	var etcdopsTaskList druidv1alpha1.EtcdOpsTaskList
+	err = h.client.List(ctx, &etcdopsTaskList, client.InNamespace(task.Namespace))
 	if err != nil {
 		h.logger.Error(err, "Error fetching EtcdOperatorTask list")
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 	// Duplicate CR check: ensure no other task (except this one) has the same etcdRef and OnDemandSnapshot config (non-nil)
-	for _, existingTask := range etcdoperatortaskList.Items {
+	for _, existingTask := range etcdopsTaskList.Items {
 		if existingTask.Name == task.Name && existingTask.Namespace == task.Namespace {
 			continue // skip the current task itself
 		}
@@ -55,7 +55,7 @@ func (h *Handler) handleOnDemandSnapshot(ctx context.Context, task *druidv1alpha
 			existingTask.Spec.EtcdRef.Name == task.Spec.EtcdRef.Name &&
 			existingTask.Spec.EtcdRef.Namespace == task.Spec.EtcdRef.Namespace &&
 			existingTask.Spec.Config.OnDemandSnapshot != nil {
-			return admission.Denied("another EtcdOperatorTask with the same etcdRef and OnDemandSnapshot config already exists")
+			return admission.Denied("another EtcdOpsTask with the same etcdRef and OnDemandSnapshot config already exists")
 		}
 	}
 	return admission.Allowed("OnDemandSnapshot config valid")

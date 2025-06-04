@@ -119,6 +119,26 @@ type ControllerConfiguration struct {
 	EtcdCopyBackupsTask EtcdCopyBackupsTaskControllerConfiguration `json:"etcdCopyBackupsTask"`
 	// Secret is the configuration for the Secret controller.
 	Secret SecretControllerConfiguration `json:"secret"`
+	// EtcdOpsTask is the configuration for the EtcdOpsTask controller.
+	EtcdOpsTask EtcdOpsTaskControllerConfiguration `json:"etcdOpsTask"`
+}
+
+// EtcdOpsTaskControllerConfiguration defines the configuration for the EtcdOpsTask controller.
+type EtcdOpsTaskControllerConfiguration struct {
+	// ConcurrentSyncs is the max number of concurrent workers that can be run, each worker servicing a reconcile request.
+	// +optional
+	ConcurrentSyncs *int `json:"concurrentSyncs,omitempty"`
+	// EnableEtcdSpecAutoReconcile controls how the Etcd Spec is reconciled for EtcdOpsTask. If set to true, then any change in Etcd spec
+	// will automatically trigger a reconciliation of the Etcd resource. If set to false, then an operator needs to
+	// explicitly set gardener.cloud/operation=reconcile annotation on the Etcd resource to trigger reconciliation
+	// of the Etcd spec.
+	EnableEtcdSpecAutoReconcile bool `json:"enableEtcdSpecAutoReconcile"`
+	// DisableEtcdServiceAccountAutomount controls the auto-mounting of service account token for EtcdOpsTask resources.
+	DisableEtcdServiceAccountAutomount bool `json:"disableEtcdServiceAccountAutomount"`
+	// EtcdStatusSyncPeriod is the duration after which an event will be re-queued ensuring etcd status synchronization for EtcdOpsTask.
+	EtcdStatusSyncPeriod metav1.Duration `json:"etcdStatusSyncPeriod"`
+	// RequeueInterval is the duration to wait before re-queuing a reconcile request for EtcdOpsTask.
+	RequeueInterval metav1.Duration `json:"requeueInterval"`
 }
 
 // EtcdControllerConfiguration defines the configuration for the Etcd controller.
@@ -184,6 +204,8 @@ type EtcdCopyBackupsTaskControllerConfiguration struct {
 type WebhookConfiguration struct {
 	// EtcdComponentProtection is the configuration for EtcdComponentProtection webhook.
 	EtcdComponentProtection EtcdComponentProtectionWebhookConfiguration `json:"etcdComponentProtection"`
+	// EtcdOpsTask is the configuration for EtcdOpsTask webhook.
+	EtcdOpsTaskProtection EtcdOpsTaskWebhookConfiguration `json:"etcdOpsTaskProtection"`
 }
 
 // EtcdComponentProtectionWebhookConfiguration defines the configuration for EtcdComponentProtection webhook.
@@ -209,6 +231,11 @@ type ServiceAccountInfo struct {
 	// Usually this information is usually available at /var/run/secrets/kubernetes.io/serviceaccount/namespace.
 	// However, if automountServiceAccountToken is set to false then this file will not be available.
 	Namespace string `json:"namespace"`
+}
+
+type EtcdOpsTaskWebhookConfiguration struct {
+	// Enabled indicates whether the EtcdOpsTask webhook is enabled.
+	Enabled bool `json:"enabled"`
 }
 
 // LogFormat is the format of the log.

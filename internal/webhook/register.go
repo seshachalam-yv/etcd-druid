@@ -5,8 +5,10 @@
 package webhook
 
 import (
+
 	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/webhook/etcdcomponentprotection"
+	"github.com/gardener/etcd-druid/internal/webhook/etcdopstaskprotection"
 
 	"golang.org/x/exp/slog"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,10 +31,10 @@ func Register(mgr ctrl.Manager, config druidconfigv1alpha1.WebhookConfiguration)
 		}
 	}
 	// Add EtcdOperatorTask webhook to the manager
-	if config.EtcdOperatorTask.Enabled {
-		etcdOperatorTaskWebhook, err := etcdoperatortask.NewHandler(
+	if config.EtcdOpsTaskProtection.Enabled {
+		etcdOperatorTaskWebhook, err := etcdopstaskprotection.NewHandler(
 			mgr,
-			config.EtcdOperatorTask,
+			config.EtcdOpsTaskProtection,
 		)
 		if err != nil {
 			return err

@@ -1,4 +1,4 @@
-package etcdoperatortask
+package etcdopstask
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func (r *Reconciler) reconcileTask(ctx context.Context, taskObjKey client.Object
 func (r *Reconciler) ensureTaskFinalizer(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
 	meta := &metav1.PartialObjectMetadata{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "EtcdOperatorTask",
+			Kind:       "EtcdOpsTask",
 			APIVersion: v1alpha1.SchemeGroupVersion.String(),
 		},
 	}
@@ -113,7 +113,7 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 		}
 		requeue := result.RequeueAfter
 		if requeue == 0 {
-			requeue = r.config.RequeueInterval
+			requeue = r.config.RequeueInterval.Duration
 		}
 		return ctrlutils.ReconcileAfter(requeue, "Task admit in progress")
 	}
@@ -207,7 +207,7 @@ func (r *Reconciler) runTask(ctx context.Context, taskObjKey client.ObjectKey, t
 
 	requeue := result.RequeueAfter
 	if requeue == 0 {
-		requeue = r.config.RequeueInterval
+		requeue = r.config.RequeueInterval.Duration
 	}
 	return ctrlutils.ReconcileAfter(requeue, "Task in progress")
 }

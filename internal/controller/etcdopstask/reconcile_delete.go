@@ -1,4 +1,4 @@
-package etcdoperatortask
+package etcdopstask
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// triggerDeletionFlow handles the deletion flow for EtcdOperatorTask resources.
-func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.Handler, task *v1alpha1.EtcdOperatorTask) ctrlutils.ReconcileStepResult {
+// triggerDeletionFlow handles the deletion flow for EtcdOpsTask resources.
+func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.Handler, task *v1alpha1.EtcdOpsTask) ctrlutils.ReconcileStepResult {
 	logger := taskHandler.Logger()
 	logger.Info("Triggering deletion flow", "completed", task.IsCompleted(), "markedForDeletion", task.IsMarkedForDeletion())
 
@@ -39,15 +39,15 @@ func (r *Reconciler) triggerDeletionFlow(ctx context.Context, taskHandler task.H
 			StepFunc: r.removeTask,
 		},
 	}
-	for stepName, fn := range deletionStepFns {
-		logger.Info("Executing deletion step", "stepName", stepName)
-		result := fn.StepFunc(ctx, client.ObjectKeyFromObject(task), taskHandler)
+	for _, step := range deletionStepFns {
+		logger.Info("Executing deletion step", "stepName", step.StepName)
+		result := step.StepFunc(ctx, client.ObjectKeyFromObject(task), taskHandler)
 		if ctrlutils.ShortCircuitReconcileFlow(result) {
-			logger.Info("Short-circuiting deletion flow", "stepName", stepName, "result", result)
+			logger.Info("Short-circuiting deletion flow", "stepName", step.StepName, "result", result)
 			return result
 		}
 	}
-	logger.Info("Deletion flow completed for EtcdOperatorTask")
+	logger.Info("Deletion flow completed for EtcdOpsTask")
 	return ctrlutils.DoNotRequeue()
 }
 
@@ -104,7 +104,7 @@ func (r *Reconciler) cleanupTaskResources(ctx context.Context, taskObjKey client
 	return ctrlutils.ContinueReconcile()
 }
 
-// removeTaskFinalizer removes the finalizer from the EtcdOperatorTask resource.
+// removeTaskFinalizer removes the finalizer from the EtcdOpsTask resource.
 func (r *Reconciler) removeTaskFinalizer(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
 	task, err := r.getTask(ctx, taskObjKey)
 	if err != nil {
@@ -119,9 +119,9 @@ func (r *Reconciler) removeTaskFinalizer(ctx context.Context, taskObjKey client.
 	return ctrlutils.ContinueReconcile()
 }
 
-// removeTask deletes the EtcdOperatorTask resource from the cluster.
+// removeTask deletes the EtcdOpsTask resource from the cluster.
 func (r *Reconciler) removeTask(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
-	task := &v1alpha1.EtcdOperatorTask{}
+	task := &v1alpha1.EtcdOpsTask{}
 	if err := r.client.Get(ctx, taskObjKey, task); err != nil {
 		return ctrlutils.ReconcileWithError(client.IgnoreNotFound(err))
 	}

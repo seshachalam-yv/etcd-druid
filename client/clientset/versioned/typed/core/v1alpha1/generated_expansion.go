@@ -9,4 +9,4 @@ type EtcdExpansion interface{}
 
 type EtcdCopyBackupsTaskExpansion interface{}
 
-type EtcdOperatorTaskExpansion interface{}
+type EtcdOpsTaskExpansion interface{}

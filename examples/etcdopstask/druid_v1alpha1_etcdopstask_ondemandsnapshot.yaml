@@ -1,7 +1,7 @@
 apiVersion: druid.gardener.cloud/v1alpha1
-kind: EtcdOperatorTask
+kind: EtcdOpsTask
 metadata:
-  name: on-demand-snapshot-task
+  name: on-demand-snapshot-task-2
   namespace: default
 spec:
   etcdRef:
@@ -11,6 +11,6 @@ spec:
     onDemandSnapshotConfig:
       type: full #values: full, delta
       timeoutSeconds: 60
-      isFinal: true
+      isFinal: false
     
   ttlSecondsAfterFinished: 60

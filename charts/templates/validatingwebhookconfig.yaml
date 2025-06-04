@@ -1,5 +1,6 @@
-{{- $createWebhookConfig := include "webhook.etcdcomponentprotection.enabled" . }}
-{{- if eq $createWebhookConfig "true" }}
+{{- $etcdComponentProtectionEnabled := eq (include "webhook.etcdcomponentprotection.enabled" .) "true" }}
+{{- $etcdOpsTaskProtectionEnabled := .Values.operatorConfig.webhooks.etcdOpsTaskProtection.enabled }}
+{{- if or $etcdComponentProtectionEnabled $etcdOpsTaskProtectionEnabled }}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -9,6 +10,7 @@ metadata:
   labels:
     app.kubernetes.io/name: etcd-druid
 webhooks:
+{{- if $etcdComponentProtectionEnabled }}
   - admissionReviewVersions:
       - v1beta1
       - v1
@@ -18,7 +20,7 @@ webhooks:
         name: etcd-druid
         namespace: {{ .Release.Namespace }}
         path: /webhooks/etcdcomponents
-        port: {{ .Values.controllerManager.server.webhook.port }}
+        port: {{ .Values.operatorConfig.server.webhooks.port }}
     failurePolicy: Fail
     matchPolicy: Exact
     name: etcdcomponents.webhooks.druid.gardener.cloud
@@ -131,24 +133,21 @@ webhooks:
         scope: '*'
     sideEffects: None
     timeoutSeconds: 10
-<<<<<<< HEAD
-<<<<<<< HEAD:charts/templates/validating-webhook-config.yaml
 {{- end }}
-
-{{- if .Values.webhooks.etcdOperatorTask.enabled }}
+{{- if $etcdOpsTaskProtectionEnabled }}
   - admissionReviewVersions:
       - v1beta1
       - v1
     clientConfig:
-      caBundle: {{ .Files.Get .Values.webhooks.pki.caPath | b64enc }}
+      caBundle: {{ .Files.Get .Values.webhookPKI.caPath | b64enc }}
       service:
         name: etcd-druid
         namespace: {{ .Release.Namespace }}
-        path: /webhooks/etcdoperatortask
+        path: /webhooks/etcdopstask
         port: {{ .Values.controllerManager.server.webhook.port }}
     failurePolicy: Fail
     matchPolicy: Exact
-    name: etcdoperatortask.webhooks.druid.gardener.cloud
+    name: etcdopstask.webhooks.druid.gardener.cloud
     namespaceSelector: {}
     rules:
       - apiGroups:
@@ -157,15 +156,11 @@ webhooks:
           - v1alpha1
         operations:
           - CREATE
+          - UPDATE
         resources:
-          - etcdoperatortasks
+          - etcdopstasks
         scope: '*'
     sideEffects: None
     timeoutSeconds: 10
-=======
->>>>>>> 16a5858f (Introducing OperatorConfig to replace existing CLI flags (#1090)):charts/templates/validatingwebhookconfig.yaml
 {{- end }}
-=======
 {{- end }}
-
->>>>>>> 8ce05585 (implementation of delete handler + admission webhook)

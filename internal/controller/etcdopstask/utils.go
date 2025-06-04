@@ -1,4 +1,4 @@
-package etcdoperatortask
+package etcdopstask
 
 import (
 	"context"
@@ -14,13 +14,13 @@ import (
 	druiderr "github.com/gardener/etcd-druid/internal/errors"
 )
 
-// getTask fetches the EtcdOperatorTask resource for the given object key.
+// getTask fetches the EtcdOpsTask resource for the given object key.
 //
 // Returns (nil, nil) if the resource is not found (i.e., has been deleted),
 // or the task and error otherwise. This is useful for distinguishing between
 // not-found and other error conditions in reconciliation logic.
-func (r *Reconciler) getTask(ctx context.Context, taskObjKey client.ObjectKey) (*v1alpha1.EtcdOperatorTask, error) {
-	task := &v1alpha1.EtcdOperatorTask{}
+func (r *Reconciler) getTask(ctx context.Context, taskObjKey client.ObjectKey) (*v1alpha1.EtcdOpsTask, error) {
+	task := &v1alpha1.EtcdOpsTask{}
 	err := r.client.Get(ctx, taskObjKey, task)
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
@@ -53,7 +53,7 @@ func (r *Reconciler) recordLastOperation(ctx context.Context, taskObjKey client.
 
 		if task.Status.LastOperation == nil {
 			// Initialize LastOperation if not present
-			task.Status.LastOperation = &v1alpha1.EtcdOperatorLastOperation{
+			task.Status.LastOperation = &v1alpha1.EtcdOpsLastOperation{
 				Phase:              phase,
 				State:              state,
 				LastTransitionTime: now,
@@ -136,7 +136,7 @@ func (r *Reconciler) recordLastError(ctx context.Context, taskObjKey client.Obje
 		now := &metav1.Time{Time: time.Now().UTC()}
 		lastErrors := task.Status.LastErrors
 		if lastErrors == nil {
-			lastErrors = make([]v1alpha1.EtcdOperatorTaskLastError, 0, 10)
+			lastErrors = make([]v1alpha1.EtcdOpsTaskLastError, 0, 10)
 		}
 		if len(lastErrors) >= 10 {
 			lastErrors = lastErrors[1:]
@@ -145,13 +145,13 @@ func (r *Reconciler) recordLastError(ctx context.Context, taskObjKey client.Obje
 		// Use MapToLastError to extract code/description if it's a DruidError
 		mapped := MapToLastError(err)
 		if mapped != nil {
-			lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
+			lastErrors = append(lastErrors, v1alpha1.EtcdOpsTaskLastError{
 				Code:        mapped.Code,
 				Description: mapped.Description,
 				ObservedAt:  *now,
 			})
 		} else {
-			lastErrors = append(lastErrors, v1alpha1.EtcdOperatorTaskLastError{
+			lastErrors = append(lastErrors, v1alpha1.EtcdOpsTaskLastError{
 				Description: err.Error(),
 				ObservedAt:  *now,
 			})

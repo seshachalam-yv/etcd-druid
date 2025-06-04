@@ -29,7 +29,7 @@ webhookPKI:
 # This configuration property is a short-lived property. It will be used to toggle between the now deprecated
 # CLI flags and the new OperatorConfiguration (which is the recommended way to configure etcd-druid operator).
 # To preserve backward compatibility the default value for this property is set to false.
-enabledOperatorConfig: false
+enabledOperatorConfig: true
 
 # Operator configuration
 # All configurable fields have been specified. Many of which are commented out with their default values.
@@ -74,11 +74,19 @@ operatorConfig:
       concurrentSyncs: 3
     secret:
       concurrentSyncs: 10
+    etcdOpsTask:
+      concurrentSyncs: 3
+      enableEtcdSpecAutoReconcile: false
+      disableEtcdServiceAccountAutomount: false
+      etcdStatusSyncPeriod: 15s
+      requeueInterval: 15s
   webhooks:
     etcdComponentProtection:
       enabled: false
       exemptServiceAccounts:
         - system:serviceaccount:kube-system:generic-garbage-collector
+    etcdOpsTaskProtection:
+      enabled: true
   featureGates: { }
   logConfiguration:
     logLevel: info
@@ -120,6 +128,9 @@ controllers:
     workers: 3
   secret:
     workers: 10
+  etcdOpsTask:
+    workers: 3
+    
 
 # deprecated, use operatorConfig.server.webhooks instead
 webhooks:
@@ -127,6 +138,8 @@ webhooks:
     enabled: false
     exemptServiceAccounts:
       - system:serviceaccount:kube-system:generic-garbage-collector
+  etcdOpsTaskProtection:
+    enabled: true
 
 serviceAccount:
   name: etcd-druid

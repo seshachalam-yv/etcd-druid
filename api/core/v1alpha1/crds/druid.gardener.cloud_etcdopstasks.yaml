@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.5
-  name: etcdoperatortasks.druid.gardener.cloud
+  name: etcdopstasks.druid.gardener.cloud
 spec:
   group: druid.gardener.cloud
   names:
-    kind: EtcdOperatorTask
-    listKind: EtcdOperatorTaskList
-    plural: etcdoperatortasks
-    singular: etcdoperatortask
+    kind: EtcdOpsTask
+    listKind: EtcdOpsTaskList
+    plural: etcdopstasks
+    singular: etcdopstask
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -21,7 +21,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: EtcdOperatorTask represents an out-of-band operator task resource.
+        description: EtcdOpsTask represents an out-of-band operator task resource.
         properties:
           apiVersion:
             description: |-
@@ -41,11 +41,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec defines the desired state of the EtcdOperatorTask resource.
+            description: Spec defines the desired state of the EtcdOpsTask resource.
             properties:
               config:
                 description: |-
-                  Config defines the configuration for the EtcdOperatorTask.
+                  Config defines the configuration for the EtcdOpsTask.
                   Only one of the configurations can be specified at a time.
                 properties:
                   onDemandSnapshotConfig:
@@ -111,7 +111,7 @@ spec:
             - config
             type: object
           status:
-            description: Status is the most recently observed status of the EtcdOperatorTask
+            description: Status is the most recently observed status of the EtcdOpsTask
               resource.
             properties:
               initiatedAt:

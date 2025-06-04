@@ -1,9 +1,10 @@
-package etcdoperatortask
+package etcdopstask
 
 import (
 	"context"
 	"fmt"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	"github.com/go-logr/logr"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,7 +20,7 @@ import (
 )
 
 const (
-	ControllerName = "etcdoperatortask-controller"
+	ControllerName = "etcdopstask-controller"
 	FinalizerName  = "etcd-druid.gardener.cloud/etcd-operator-task"
 )
 
@@ -36,11 +37,11 @@ type Reconciler struct {
 	client   client.Client
 	recorder record.EventRecorder
 	logger   logr.Logger
-	config   *Config
+	config   *druidconfigv1alpha1.EtcdOpsTaskControllerConfiguration
 }
 
 // New returns a new Reconciler for EtcdOperatorTask resources.
-func New(mgr manager.Manager, cfg *Config) *Reconciler {
+func New(mgr manager.Manager, cfg *druidconfigv1alpha1.EtcdOpsTaskControllerConfiguration) *Reconciler {
 	logger := log.Log.WithName(ControllerName)
 	return &Reconciler{
 		client:   mgr.GetClient(),
@@ -99,7 +100,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 // createTaskHandlerInstance instantiates the appropriate TaskHandler for the given task.
 // Returns (nil, nil) if the task type is not supported (should not happen if webhook validation is correct).
-func (r *Reconciler) createTaskHandlerInstance(task *v1alpha1.EtcdOperatorTask, logger logr.Logger) (task.Handler, error) {
+func (r *Reconciler) createTaskHandlerInstance(task *v1alpha1.EtcdOpsTask, logger logr.Logger) (task.Handler, error) {
 	if task.Spec.Config.OnDemandSnapshot != nil {
 		return ondemandsnapshot.New(r.client, logger, task)
 	}
@@ -108,7 +109,6 @@ func (r *Reconciler) createTaskHandlerInstance(task *v1alpha1.EtcdOperatorTask, 
 	return nil, fmt.Errorf("task type not supported")
 }
 
-func (r *Reconciler) shouldDeleteTask(task *v1alpha1.EtcdOperatorTask) bool {
+func (r *Reconciler) shouldDeleteTask(task *v1alpha1.EtcdOpsTask) bool {
 	return task.IsCompleted() || task.IsMarkedForDeletion()
 }
-

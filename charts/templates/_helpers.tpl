@@ -53,6 +53,12 @@ config.yaml: |
       concurrentSyncs: {{ .Values.operatorConfig.controllers.etcdCopyBackupsTask.concurrentSyncs }}
     secret:
       concurrentSyncs: {{ .Values.operatorConfig.controllers.secret.concurrentSyncs }}
+    etcdOpsTask:
+      concurrentSyncs: {{ .Values.operatorConfig.controllers.etcdOpsTask.concurrentSyncs }}
+      enableEtcdSpecAutoReconcile: {{ .Values.operatorConfig.controllers.etcdOpsTask.enableEtcdSpecAutoReconcile }}
+      disableEtcdServiceAccountAutomount: {{ .Values.operatorConfig.controllers.etcdOpsTask.disableEtcdServiceAccountAutomount }}
+      etcdStatusSyncPeriod: {{ .Values.operatorConfig.controllers.etcdOpsTask.etcdStatusSyncPeriod }}
+      requeueInterval: {{ .Values.operatorConfig.controllers.etcdOpsTask.requeueInterval }}
   webhooks:
     etcdComponentProtection:
       enabled: {{ .Values.operatorConfig.webhooks.etcdComponentProtection.enabled }}
@@ -61,6 +67,8 @@ config.yaml: |
         namespace: {{ .Release.Namespace }}
       exemptServiceAccounts:
       {{- toYaml .Values.operatorConfig.webhooks.etcdComponentProtection.exemptServiceAccounts | nindent 8}}
+    etcdOpsTaskProtection:
+      enabled: {{ .Values.operatorConfig.webhooks.etcdOpsTaskProtection.enabled }}
 {{- with .Values.featureGates }}
   featureGates:
   {{- toYaml . | nindent 4 }}

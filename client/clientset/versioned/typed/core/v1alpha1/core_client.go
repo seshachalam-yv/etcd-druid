@@ -17,7 +17,7 @@ type DruidV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	EtcdsGetter
 	EtcdCopyBackupsTasksGetter
-	EtcdOperatorTasksGetter
+	EtcdOpsTasksGetter
 }
 
 // DruidV1alpha1Client is used to interact with features provided by the druid.gardener.cloud group.
@@ -33,8 +33,8 @@ func (c *DruidV1alpha1Client) EtcdCopyBackupsTasks(namespace string) EtcdCopyBac
 	return newEtcdCopyBackupsTasks(c, namespace)
 }
 
-func (c *DruidV1alpha1Client) EtcdOperatorTasks(namespace string) EtcdOperatorTaskInterface {
-	return newEtcdOperatorTasks(c, namespace)
+func (c *DruidV1alpha1Client) EtcdOpsTasks(namespace string) EtcdOpsTaskInterface {
+	return newEtcdOpsTasks(c, namespace)
 }
 
 // NewForConfig creates a new DruidV1alpha1Client for the given config.

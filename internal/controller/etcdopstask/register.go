@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // TODO: Redefine the below after discussion.
-package etcdoperatortask
+package etcdopstask
 
 import (
 	"time"
@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdoperatortasks,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdoperatortasks/status,verbs=get;create;update;patch
+// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdopstasks,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdopstasks/status,verbs=get;create;update;patch
 
 // RegisterWithManager sets up the controller on the given manager.
 func (r *Reconciler) RegisterWithManager(mgr ctrl.Manager) error {
@@ -33,7 +33,7 @@ func (r *Reconciler) RegisterWithManager(mgr ctrl.Manager) error {
 				10*time.Second,
 			),
 		}).
-		For(&druidv1alpha1.EtcdOperatorTask{}).
+		For(&druidv1alpha1.EtcdOpsTask{}).
 		WithEventFilter(r.buildPredicate()).
 		Complete(r)
 }
@@ -83,7 +83,7 @@ func (r *Reconciler) hasReconcileAnnotation() predicate.Predicate {
 	// not been removed (since the last reconcile is not yet successfully completed).
 	return predicate.Funcs{
 		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-			newEtcdOperatorTask, ok := updateEvent.ObjectNew.(*druidv1alpha1.EtcdOperatorTask)
+			newEtcdOperatorTask, ok := updateEvent.ObjectNew.(*druidv1alpha1.EtcdOpsTask)
 			if !ok {
 				return false
 			}

@@ -51,37 +51,37 @@ const (
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// EtcdOperatorTask represents an out-of-band operator task resource.
-type EtcdOperatorTask struct {
+// EtcdOpsTask represents an out-of-band operator task resource.
+type EtcdOpsTask struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Spec defines the desired state of the EtcdOperatorTask resource.
+	// Spec defines the desired state of the EtcdOpsTask resource.
 	// +kubebuilder:validation:Required
-	Spec EtcdOperatorTaskSpec `json:"spec"`
+	Spec EtcdOpsTaskSpec `json:"spec"`
 
-	// Status is the most recently observed status of the EtcdOperatorTask resource.
+	// Status is the most recently observed status of the EtcdOpsTask resource.
 	// +optional
-	Status EtcdOperatorTaskStatus `json:"status,omitempty"`
+	Status EtcdOpsTaskStatus `json:"status,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
-// EtcdOperatorTaskList contains a list of EtcdOperatorTask objects.
-type EtcdOperatorTaskList struct {
+// EtcdOpsTaskList contains a list of EtcdOpsTask objects.
+type EtcdOpsTaskList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []EtcdOperatorTask `json:"items"`
+	Items           []EtcdOpsTask `json:"items"`
 }
 
-// EtcdOperatorTaskSpec defines the desired state of EtcdOperatorTask.
-type EtcdOperatorTaskSpec struct {
+// EtcdOpsTaskSpec defines the desired state of EtcdOpsTask.
+type EtcdOpsTaskSpec struct {
 
-	// Config defines the configuration for the EtcdOperatorTask.
+	// Config defines the configuration for the EtcdOpsTask.
 	// Only one of the configurations can be specified at a time.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="The config field in spec is immutable and cannot be changed after creation."
-	Config EtcdOperatorTaskConfig `json:"config"`
+	Config EtcdOpsTaskConfig `json:"config"`
 
 	// TTLSecondsAfterFinished is the time-to-live (in seconds) to garbage collect the
 	// related resource(s) of the task once it has been completed.
@@ -97,9 +97,9 @@ type EtcdOperatorTaskSpec struct {
 	EtcdRef *EtcdReference `json:"etcdRef,omitempty"`
 }
 
-// EtcdOperatorTaskConfig defines the configuration for the EtcdOperatorTask.
+// EtcdOpsTaskConfig defines the configuration for the EtcdOpsTask.
 // Only one of the configurations can be specified at a time.
-type EtcdOperatorTaskConfig struct {
+type EtcdOpsTaskConfig struct {
 	// OnDemandSnapshotConfig specifies configuration for on-demand snapshot tasks.
 	// +optional
 	OnDemandSnapshot *OnDemandSnapshotConfig `json:"onDemandSnapshotConfig,omitempty"` // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -115,7 +115,7 @@ type EtcdReference struct {
 	Namespace string `json:"namespace"`
 }
 
-type EtcdOperatorTaskStatus struct {
+type EtcdOpsTaskStatus struct {
 	// State is the last known state of the task.
 	// +optional
 	State *TaskState `json:"state,omitempty"`
@@ -131,14 +131,14 @@ type EtcdOperatorTaskStatus struct {
 	// LastErrors represents the errors when processing the task.
 	// +kubebuilder:validation:MaxItems=10
 	// +optional
-	LastErrors []EtcdOperatorTaskLastError `json:"lastErrors,omitempty"`
+	LastErrors []EtcdOpsTaskLastError `json:"lastErrors,omitempty"`
 
 	// LastOperation captures the last operation status if task involves many stages.
 	// +optional
-	LastOperation *EtcdOperatorLastOperation `json:"lastOperation,omitempty"`
+	LastOperation *EtcdOpsLastOperation `json:"lastOperation,omitempty"`
 }
 
-type EtcdOperatorTaskLastError struct {
+type EtcdOpsTaskLastError struct {
 	// Code is an error code that uniquely identifies an error.
 	Code ErrorCode `json:"code"`
 
@@ -149,7 +149,7 @@ type EtcdOperatorTaskLastError struct {
 	ObservedAt metav1.Time `json:"observedAt"`
 }
 
-type EtcdOperatorLastOperation struct {
+type EtcdOpsLastOperation struct {
 	// State is the status of the last operation, one of pending, progress, completed, failed.
 	State OperationState `json:"state"`
 
@@ -165,7 +165,7 @@ type EtcdOperatorLastOperation struct {
 }
 
 // IsCompleted returns true if the task is completed.
-func (t *EtcdOperatorTask) IsCompleted() bool {
+func (t *EtcdOpsTask) IsCompleted() bool {
 	if t.Status.State == nil {
 		return false
 	}
@@ -173,23 +173,23 @@ func (t *EtcdOperatorTask) IsCompleted() bool {
 }
 
 // IsMarkedForDeletion returns true if the deletion timestamp is set.
-func (t *EtcdOperatorTask) IsMarkedForDeletion() bool {
+func (t *EtcdOpsTask) IsMarkedForDeletion() bool {
 	return t.ObjectMeta.DeletionTimestamp != nil
 }
 
 // TTLHasExpired returns true if the TTL after finished has expired.
-func (t *EtcdOperatorTask) HasTTLExpired() bool {
+func (t *EtcdOpsTask) HasTTLExpired() bool {
 	return t.GetTimeToExpiry() <= 0
 }
 
-func (t *EtcdOperatorTask) GetTTL() time.Duration {
+func (t *EtcdOpsTask) GetTTL() time.Duration {
 	return time.Duration(t.Spec.TTLSecondsAfterFinished) * time.Second
 }
 
 // GetTimeToExpiry returns the remaining duration until the task's TTL expires.
 // If the task is not completed, it returns zero.
 // If LastTransitionTime is nil, uses InitiatedAt; if that is also nil, uses CreationTimestamp.
-func (t *EtcdOperatorTask) GetTimeToExpiry() time.Duration {
+func (t *EtcdOpsTask) GetTimeToExpiry() time.Duration {
 	var baseTime time.Time
 	switch {
 	case t.Status.LastTransitionTime != nil:

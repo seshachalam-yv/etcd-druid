@@ -40,7 +40,7 @@ type OnDemandSnapshotTask struct {
 	config        v1alpha1.OnDemandSnapshotConfig
 }
 
-func New(k8sclient client.Client, logger logr.Logger, task *v1alpha1.EtcdOperatorTask) (task.Handler, error) {
+func New(k8sclient client.Client, logger logr.Logger, task *v1alpha1.EtcdOpsTask) (task.Handler, error) {
 
 	return &OnDemandSnapshotTask{
 		client:        k8sclient,

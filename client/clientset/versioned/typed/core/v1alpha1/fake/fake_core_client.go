@@ -23,8 +23,8 @@ func (c *FakeDruidV1alpha1) EtcdCopyBackupsTasks(namespace string) v1alpha1.Etcd
 	return newFakeEtcdCopyBackupsTasks(c, namespace)
 }
 
-func (c *FakeDruidV1alpha1) EtcdOperatorTasks(namespace string) v1alpha1.EtcdOperatorTaskInterface {
-	return newFakeEtcdOperatorTasks(c, namespace)
+func (c *FakeDruidV1alpha1) EtcdOpsTasks(namespace string) v1alpha1.EtcdOpsTaskInterface {
+	return newFakeEtcdOpsTasks(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

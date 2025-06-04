@@ -1,9 +1,10 @@
-package etcdoperatortask
+package etcdopstaskprotection
 
 import (
 	"context"
 	"testing"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/client/kubernetes"
 	"github.com/gardener/etcd-druid/test/utils"
@@ -14,20 +15,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// createTestTask is used to create a test EtcdOperatorTask object which can be modified and used in the tests.
-func createTestTask(name, namespace, etcdName, etcdNamespace string) *druidv1alpha1.EtcdOperatorTask {
+// createTestTask is used to create a test EtcdOpsTask object which can be modified and used in the tests.
+func createTestTask(name, namespace, etcdName, etcdNamespace string) *druidv1alpha1.EtcdOpsTask {
 	isFinal := false
-	return &druidv1alpha1.EtcdOperatorTask{
+	return &druidv1alpha1.EtcdOpsTask{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: druidv1alpha1.EtcdOperatorTaskSpec{
+		Spec: druidv1alpha1.EtcdOpsTaskSpec{
 			EtcdRef: &druidv1alpha1.EtcdReference{
 				Name:      etcdName,
 				Namespace: etcdNamespace,
 			},
-			Config: druidv1alpha1.EtcdOperatorTaskConfig{
+			Config: druidv1alpha1.EtcdOpsTaskConfig{
 				OnDemandSnapshot: &druidv1alpha1.OnDemandSnapshotConfig{
 					Type:    druidv1alpha1.OnDemandSnapshotTypeFull,
 					IsFinal: &isFinal,
@@ -37,7 +38,7 @@ func createTestTask(name, namespace, etcdName, etcdNamespace string) *druidv1alp
 	}
 }
 
-func createhealthyEtcd(name, namespace string, backup bool) *druidv1alpha1.Etcd {
+func createEtcd(name, namespace string, backup bool, healthy bool) *druidv1alpha1.Etcd {
 	etcd := utils.EtcdBuilderWithoutDefaults(name, namespace).WithReplicas(1).WithReadyStatus().Build()
 	if backup {
 		etcd.Spec.Backup.Store = &druidv1alpha1.StoreSpec{
@@ -46,22 +47,19 @@ func createhealthyEtcd(name, namespace string, backup bool) *druidv1alpha1.Etcd 
 			Provider:  ptr.To(druidv1alpha1.StorageProvider("S3")),
 		}
 	}
-	etcd.Status.Conditions = append(etcd.Status.Conditions, druidv1alpha1.Condition{
-		Type:    druidv1alpha1.ConditionTypeReady,
-		Status:  druidv1alpha1.ConditionTrue,
-		Message: "etcd is ready for testing purposes",
-	})
-	return etcd
-}
-
-func createUnhealthyEtcd(name, namespace string) *druidv1alpha1.Etcd {
-	etcd := utils.EtcdBuilderWithoutDefaults(name, namespace).WithReplicas(1).Build()
-	// Set status to unhealthy (not ready)
-	etcd.Status.Conditions = append(etcd.Status.Conditions, druidv1alpha1.Condition{
-		Type:    druidv1alpha1.ConditionTypeReady,
-		Status:  druidv1alpha1.ConditionFalse,
-		Message: "etcd is not ready for testing purposes",
-	})
+	if !healthy {
+		etcd.Status.Conditions = append(etcd.Status.Conditions, druidv1alpha1.Condition{
+			Type:    druidv1alpha1.ConditionTypeReady,
+			Status:  druidv1alpha1.ConditionFalse,
+			Message: "etcd is not ready for testing purposes",
+		})
+	} else {
+		etcd.Status.Conditions = append(etcd.Status.Conditions, druidv1alpha1.Condition{
+			Type:    druidv1alpha1.ConditionTypeReady,
+			Status:  druidv1alpha1.ConditionTrue,
+			Message: "etcd is ready for testing purposes",
+		})
+	}
 	return etcd
 }
 
@@ -69,7 +67,7 @@ func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 	g := NewGomegaWithT(t)
 	testCases := []struct {
 		name             string
-		task             *druidv1alpha1.EtcdOperatorTask
+		task             *druidv1alpha1.EtcdOpsTask
 		existingObjects  []client.Object // etcd will be part of this list along with duplicate tasks
 		expectedResponse string
 		expectErr 	     bool
@@ -78,7 +76,7 @@ func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 			name: "Referenced Etcd not found",
 			task: createTestTask("test-task", "test-namespace", "non-existent-etcd", "test-namespace"),
 			existingObjects: []client.Object{
-				createhealthyEtcd("healthy-etcd", "test-namespace", true),
+				createEtcd("healthy-etcd", "test-namespace", true, true),
 			},
 			expectedResponse: "etcd cluster referenced in spec.etcdRef does not exist",
 			expectErr:        true,
@@ -87,7 +85,7 @@ func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 			name: "Etcd is ready, No Duplicate CR",
 			task: createTestTask("test-task", "test-namespace", "healthy-etcd", "test-namespace"),
 			existingObjects: []client.Object{
-				createhealthyEtcd("healthy-etcd", "test-namespace", true),
+				createEtcd("healthy-etcd", "test-namespace", true, true),
 			},
 			expectedResponse: "OnDemandSnapshot config valid",
 			expectErr:        false,
@@ -96,21 +94,39 @@ func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 			name: "Etcd is ready, Duplicate CR",
 			task: createTestTask("test-task", "test-namespace", "healthy-etcd", "test-namespace"),
 			existingObjects: []client.Object{
-				createhealthyEtcd("healthy-etcd", "test-namespace", true),
+				createEtcd("healthy-etcd", "test-namespace", true, true),
 				createTestTask("duplicate-task", "test-namespace", "healthy-etcd", "test-namespace"),
 			},
-			expectedResponse: "another EtcdOperatorTask with the same etcdRef and OnDemandSnapshot config already exists",
+			expectedResponse: "another EtcdOpsTask with the same etcdRef and OnDemandSnapshot config already exists",
 			expectErr:        true,
 		},
 		{
 			name: "Etcd is ready, Duplicate CR with different etcdref",
 			task: createTestTask("test-task", "test-namespace", "healthy-etcd", "test-namespace"),
 			existingObjects: []client.Object{
-				createhealthyEtcd("healthy-etcd", "test-namespace", true),
+				createEtcd("healthy-etcd", "test-namespace", true, true),
 				createTestTask("duplicate-task", "test-namespace", "another-etcd", "test-namespace"),
 			},
 			expectedResponse: "OnDemandSnapshot config valid",
 			expectErr:        false,
+		},
+		{
+			name : "Etcd is not ready",
+			task: createTestTask("test-task", "test-namespace", "unhealthy-etcd", "test-namespace"),
+			existingObjects: []client.Object{
+				createEtcd("unhealthy-etcd", "test-namespace", true, false),
+			},
+			expectedResponse: "etcd cluster referenced in spec.etcdRef is not ready",
+			expectErr:        true,
+		},
+		{
+			name: "Backup is not enabled for Etcd",
+			task: createTestTask("test-task", "test-namespace", "healthy-etcd", "test-namespace"),
+			existingObjects: []client.Object{
+				createEtcd("healthy-etcd", "test-namespace", false, true),
+			},
+			expectedResponse: "backup is not enabled for etcd cluster referenced in spec.etcdRef",
+			expectErr:        true,
 		},
 	}
 
@@ -124,10 +140,9 @@ func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 				Scheme: cl.Scheme(),
 				Logger: logr.Discard(),
 			}
-			config := Config{
+			handler, err := NewHandler(mgr, druidconfigv1alpha1.EtcdOpsTaskWebhookConfiguration{
 				Enabled: true,
-			}
-			handler, err := NewHandler(mgr, &config)
+			})
 			g.Expect(err).ToNot(HaveOccurred())
 
 			response := handler.handleOnDemandSnapshot(
