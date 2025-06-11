@@ -32,7 +32,7 @@ func Register(mgr ctrl.Manager, config druidconfigv1alpha1.WebhookConfiguration)
 	}
 	// Add EtcdOperatorTask webhook to the manager
 	if config.EtcdOpsTaskProtection.Enabled {
-		etcdOperatorTaskWebhook, err := etcdopstaskprotection.NewHandler(
+		etcdOpsTaskWebhook, err := etcdopstaskprotection.NewHandler(
 			mgr,
 			config.EtcdOpsTaskProtection,
 		)
@@ -40,7 +40,7 @@ func Register(mgr ctrl.Manager, config druidconfigv1alpha1.WebhookConfiguration)
 			return err
 		}
 		slog.Info("Registering EtcdOperatorTask Webhook with manager")
-		if err := etcdOperatorTaskWebhook.RegisterWithManager(mgr); err != nil {
+		if err := etcdOpsTaskWebhook.RegisterWithManager(mgr); err != nil {
 			return err
 		}
 	}

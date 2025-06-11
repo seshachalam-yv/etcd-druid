@@ -9,18 +9,19 @@ import (
 
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
+	druiderr "github.com/gardener/etcd-druid/internal/errors"
 	"github.com/gardener/etcd-druid/internal/task"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	druiderr "github.com/gardener/etcd-druid/internal/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 )
 
 const (
 	// Error in case of fetching etcd object. Reason could be internal error
-	ErrGetEtcd v1alpha1.ErrorCode = "ERR_GET_ETCD" 
+	ErrGetEtcd v1alpha1.ErrorCode = "ERR_GET_ETCD"
 	// Error in case of etcd not ready
 	ErrEtcdNotReady v1alpha1.ErrorCode = "ERR_ETCD_NOT_READY"
 	// Error in case backup is not enabled
@@ -37,17 +38,19 @@ type OnDemandSnapshotTask struct {
 	logger        logr.Logger
 	name          string
 	etcdReference v1alpha1.EtcdReference
+	httpClient    http.Client
 	config        v1alpha1.OnDemandSnapshotConfig
 }
 
 func New(k8sclient client.Client, logger logr.Logger, task *v1alpha1.EtcdOpsTask) (task.Handler, error) {
 
 	return &OnDemandSnapshotTask{
-		client:        k8sclient,
-		logger:        logger,
-		name:          task.Name,
-		etcdReference: *task.Spec.EtcdRef,
-		config:        *task.Spec.Config.OnDemandSnapshot,
+		client:        	k8sclient,
+		logger:        	logger,
+		name:          	task.Name,
+		etcdReference: 	*task.Spec.EtcdRef,
+		httpClient:	 	http.Client{Timeout: time.Second * time.Duration(*task.Spec.Config.OnDemandSnapshot.TimeoutSeconds)},
+		config:        	*task.Spec.Config.OnDemandSnapshot,
 	}, nil
 }
 
@@ -69,10 +72,17 @@ func (o *OnDemandSnapshotTask) Logger() logr.Logger {
 func (o *OnDemandSnapshotTask) Admit(ctx context.Context) *task.Result {
 	var etcd v1alpha1.Etcd
 	if err := o.client.Get(ctx, o.EtcdReference(), &etcd); err != nil {
-
+		// Check the type of error and return result. If it's a transport layer issue, requeue. If the object is not found, return reject.
+		if apierrors.IsNotFound(err) {
+			return &task.Result{
+				Description: "Admit Operation: Failed to get etcd object",
+				Error:       druiderr.WrapError(err, ErrGetEtcd, task.AdmitOperation, "failed to get etcd object"),
+				Completed:   true,
+			}
+		} 
 		return &task.Result{
-			Description: "Admit Operation: Failed to get etcd object",
-			Error:       druiderr.WrapError(err, ErrGetEtcd, task.AdmitOperation, "failed to get etcd object"),
+			Description: "Admit Operation: Failed to get etcd object due to internal error",
+			Error:       druiderr.WrapError(err, ErrGetEtcd, task.AdmitOperation, "failed to get etcd object due to internal error"),
 			Completed:   false,
 		}
 	}
@@ -129,8 +139,7 @@ func (o *OnDemandSnapshotTask) Run(ctx context.Context) *task.Result {
 		}
 	}
 
-	httpClient := &http.Client{Timeout: time.Second * time.Duration(*o.config.TimeoutSeconds)}
-	resp, err := httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return &task.Result{
 			Description: "Run Operation: Failed to execute HTTP request",

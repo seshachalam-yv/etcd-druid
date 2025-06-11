@@ -86,7 +86,7 @@ operatorConfig:
       exemptServiceAccounts:
         - system:serviceaccount:kube-system:generic-garbage-collector
     etcdOpsTaskProtection:
-      enabled: true
+      enabled: false
   featureGates: { }
   logConfiguration:
     logLevel: info
