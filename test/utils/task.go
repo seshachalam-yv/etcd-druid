@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/gardener/etcd-druid/internal/task"
-	"github.com/go-logr/logr"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -75,6 +75,10 @@ func (f *FakeHandler) WithCleanup(r *task.Result) *FakeHandler {
 func (f *FakeHandler) EtcdReference() types.NamespacedName { return f.etcdRef }
 
 func (f *FakeHandler) Name() string { return f.name }
+
+// TODO:
+// Add a check/ logic to ensure that if the result is set as false, then the oepration such as Admit, Run, Cleanup should not be called ie mocking the failure case.
+// IN each test case, set it so that either failure case or success case is tested.
 
 // Logger returns a no‑op logger suitable for tests.
 func (f *FakeHandler) Logger() logr.Logger { return f.logger }

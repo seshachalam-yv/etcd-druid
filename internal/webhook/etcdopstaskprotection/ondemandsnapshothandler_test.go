@@ -8,11 +8,13 @@ import (
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/client/kubernetes"
 	"github.com/gardener/etcd-druid/test/utils"
+
 	"github.com/go-logr/logr"
-	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	. "github.com/onsi/gomega"
 )
 
 // createTestTask is used to create a test EtcdOpsTask object which can be modified and used in the tests.
@@ -38,6 +40,7 @@ func createTestTask(name, namespace, etcdName, etcdNamespace string) *druidv1alp
 	}
 }
 
+// createEtcd is used to create a test Etcd object which can be modified and used in the tests.
 func createEtcd(name, namespace string, backup bool, healthy bool) *druidv1alpha1.Etcd {
 	etcd := utils.EtcdBuilderWithoutDefaults(name, namespace).WithReplicas(1).WithReadyStatus().Build()
 	if backup {
@@ -63,6 +66,7 @@ func createEtcd(name, namespace string, backup bool, healthy bool) *druidv1alpha
 	return etcd
 }
 
+// TestHandleOndemandSnapshotCreation_EtcdReadiness tests the handleOnDemandSnapshot function for various Etcd readiness scenarios.
 func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 	g := NewGomegaWithT(t)
 	testCases := []struct {
@@ -70,7 +74,7 @@ func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 		task             *druidv1alpha1.EtcdOpsTask
 		existingObjects  []client.Object // etcd will be part of this list along with duplicate tasks
 		expectedResponse string
-		expectErr 	     bool
+		expectErr        bool
 	}{
 		{
 			name: "Referenced Etcd not found",
@@ -111,7 +115,7 @@ func TestHandleOndemandSnapshotCreation_EtcdReadiness(t *testing.T) {
 			expectErr:        false,
 		},
 		{
-			name : "Etcd is not ready",
+			name: "Etcd is not ready",
 			task: createTestTask("test-task", "test-namespace", "unhealthy-etcd", "test-namespace"),
 			existingObjects: []client.Object{
 				createEtcd("unhealthy-etcd", "test-namespace", true, false),

@@ -233,6 +233,7 @@ type ServiceAccountInfo struct {
 	Namespace string `json:"namespace"`
 }
 
+// EtcdOpsTaskWebhookConfiguration defines the configuration for the EtcdOpsTask webhook.
 type EtcdOpsTaskWebhookConfiguration struct {
 	// Enabled indicates whether the EtcdOpsTask webhook is enabled.
 	Enabled bool `json:"enabled"`

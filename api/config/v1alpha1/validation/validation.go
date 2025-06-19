@@ -153,7 +153,7 @@ func validateEtcdComponentProtectionWebhookConfiguration(webhookConfig druidconf
 }
 
 // validateEtcdOpsTaskWebhookConfiguration validates the EtcdOpsTaskWebhookConfiguration.
-func validateEtcdOpsTaskWebhookConfiguration(webhookConfig druidconfigv1alpha1.EtcdOpsTaskWebhookConfiguration, fldPath *field.Path) field.ErrorList {
+func validateEtcdOpsTaskWebhookConfiguration(_ druidconfigv1alpha1.EtcdOpsTaskWebhookConfiguration, _ *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	return allErrs
 }

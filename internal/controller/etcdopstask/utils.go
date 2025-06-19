@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gardener/etcd-druid/api/core/v1alpha1"
+	druiderr "github.com/gardener/etcd-druid/internal/errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/gardener/etcd-druid/api/core/v1alpha1"
-	druiderr "github.com/gardener/etcd-druid/internal/errors"
 )
 
 // getTask fetches the EtcdOpsTask resource for the given object key.
@@ -23,12 +23,7 @@ func (r *Reconciler) getTask(ctx context.Context, taskObjKey client.ObjectKey) (
 	task := &v1alpha1.EtcdOpsTask{}
 	err := r.client.Get(ctx, taskObjKey, task)
 	if err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			// Return error if it's not a NotFound error
-			return nil, err
-		}
-		// Not found: return (nil, nil)
-		return nil, nil
+		return nil, err
 	}
 	return task, nil
 }
@@ -108,6 +103,7 @@ func (r *Reconciler) recordTaskState(ctx context.Context, taskObjKey client.Obje
 	})
 }
 
+// MapToLastError converts a generic error to a LastError object if it can be converted to a DruidError.
 func MapToLastError(err error) *v1alpha1.LastError {
 	druidErr := &druiderr.DruidError{}
 	if errors.As(err, &druidErr) {

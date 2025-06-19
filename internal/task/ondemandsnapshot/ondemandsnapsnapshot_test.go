@@ -11,12 +11,13 @@ import (
 	druiderr "github.com/gardener/etcd-druid/internal/errors"
 	"github.com/gardener/etcd-druid/internal/task"
 	"github.com/gardener/etcd-druid/test/utils"
+
 	"github.com/go-logr/logr"
-	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	// testutils "github.com/gardener/etcd-druid/test/utils"
+
+	. "github.com/onsi/gomega"
 )
 
 func createEtcd(name, namespace string, backup bool, healthy bool) *druidv1alpha1.Etcd {
@@ -63,6 +64,7 @@ func createEtcdOpsTask(config druidv1alpha1.OnDemandSnapshotConfig) *druidv1alph
 	}
 }
 
+// TestOnDemandSnapshotTaskAdmit tests the Admit method of the OnDemandSnapshotTask handler.
 func TestOnDemandSnapshotTaskAdmit(t *testing.T) {
 	g := NewGomegaWithT(t)
 	tests := []struct {
@@ -125,7 +127,7 @@ func TestOnDemandSnapshotTaskAdmit(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// t.Parallel()
+			t.Parallel()
 			var objs []client.Object
 			if tc.etcdObject != nil {
 				objs = append(objs, tc.etcdObject)
@@ -170,34 +172,38 @@ func TestOnDemandSnapshotTaskAdmit(t *testing.T) {
 	}
 }
 
+// FakeResponse is a struct to mock the HTTP response for testing purposes.
 type FakeResponse struct {
 	Response http.Response
 	Error    error
 }
 
+// MockRoundTripper is a mock implementation of http.RoundTripper for testing purposes.
 type MockRoundTripper struct {
 	Response *http.Response
 	Err      error
 }
 
-func (m *MockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+// RoundTrip is a mock implementation of the RoundTrip method for the MockRoundTripper.
+func (m *MockRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return m.Response, m.Err
 }
 
+// CreateFakeHandler creates a fake handler to inject a custom http client for testing purposes.
 func CreateFakeHandler(cl client.Client, logger logr.Logger, etcdOpsTask *druidv1alpha1.EtcdOpsTask, httpClient http.Client) (task.Handler, error) {
 	handler, err := New(cl, logger, etcdOpsTask)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OnDemandSnapshotTask handler: %w", err)
 	}
-
-	if onDemandSnapshotTask, ok := handler.(*OnDemandSnapshotTask); ok {
-		onDemandSnapshotTask.httpClient = httpClient
-	} else {
+	onDemandSnapshotTask, ok := handler.(*OnDemandSnapshotTask)
+	if !ok {
 		return nil, fmt.Errorf("handler is not of type OnDemandSnapshotTask: %T", handler)
 	}
+	onDemandSnapshotTask.httpClient = httpClient
 	return handler, nil
 }
 
+// TestOnDemandSnapshotTaskRun tests the Run method of the OnDemandSnapshotTask handler.
 func TestOnDemandSnapshotTaskRun(t *testing.T) {
 	g := NewGomegaWithT(t)
 	tests := []struct {

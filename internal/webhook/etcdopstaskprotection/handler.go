@@ -7,14 +7,17 @@ package etcdopstaskprotection
 import (
 	context "context"
 	"net/http"
-    druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
+
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
+
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+// Handler is a webhook handler for EtcdOpsTask CR.
 type Handler struct {
 	client  client.Client
 	decoder admission.Decoder
@@ -22,6 +25,7 @@ type Handler struct {
 	logger  logr.Logger
 }
 
+// NewHandler creates a new Handler for EtcdOpsTask webhook.
 func NewHandler(mgr manager.Manager, config druidconfigv1alpha1.EtcdOpsTaskWebhookConfiguration) (*Handler, error) {
 	return &Handler{
 		client:  mgr.GetClient(),
@@ -31,6 +35,7 @@ func NewHandler(mgr manager.Manager, config druidconfigv1alpha1.EtcdOpsTaskWebho
 	}, nil
 }
 
+// Handle handles the admission request for EtcdOpsTask.
 func (h *Handler) Handle(ctx context.Context, req admission.Request) admission.Response {
 	log := h.logger.WithValues("name", req.Name, "namespace", req.Namespace, "operation", req.Operation, "user", req.UserInfo.Username)
 

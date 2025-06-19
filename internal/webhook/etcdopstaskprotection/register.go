@@ -5,7 +5,6 @@
 package etcdopstaskprotection
 
 import (
-
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"

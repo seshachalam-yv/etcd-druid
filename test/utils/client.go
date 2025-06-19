@@ -222,6 +222,12 @@ func (b *TestClientBuilder) getClient() client.Client {
 	return cl
 }
 
+// WithStatusSubresource initializes the delegating fake client builder with a status subresource for the given object.
+func (b *TestClientBuilder) WithStatusSubresource(obj client.Object) *TestClientBuilder {
+	b.delegatingClientBuilder.WithStatusSubresource(obj)
+	return b
+}
+
 // testClient is a client.Client implementation which reacts to the configured errors.
 type testClient struct {
 	delegate     client.Client

@@ -5,20 +5,22 @@ import (
 	"fmt"
 
 	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
+	"github.com/gardener/etcd-druid/api/core/v1alpha1"
+	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
+	"github.com/gardener/etcd-druid/internal/task"
+	"github.com/gardener/etcd-druid/internal/task/ondemandsnapshot"
+
 	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/gardener/etcd-druid/api/core/v1alpha1"
-	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
-	"github.com/gardener/etcd-druid/internal/task"
-	"github.com/gardener/etcd-druid/internal/task/ondemandsnapshot"
 )
 
+// Defines the Controller name and finalizer for EtcdOperatorTask resources.
 const (
 	ControllerName = "etcdopstask-controller"
 	FinalizerName  = "etcd-druid.gardener.cloud/etcd-operator-task"
@@ -27,6 +29,7 @@ const (
 // reconcileFn defines a function signature for a reconciliation step.
 type reconcileFn func(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult
 
+// StepFunction represents a single step in the reconciliation process.
 type StepFunction struct {
 	StepName string
 	StepFunc reconcileFn
@@ -51,6 +54,7 @@ func New(mgr manager.Manager, cfg *druidconfigv1alpha1.EtcdOpsTaskControllerConf
 	}
 }
 
+// Reconcile is the main reconciliation loop for EtcdOperatorTask resources.
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	logger := r.logger.WithValues(
 		"runId", string(controller.ReconcileIDFromContext(ctx)),
@@ -62,6 +66,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	task, err := r.getTask(ctx, req.NamespacedName)
 	if err != nil {
 		// Per k8s standards, return error to trigger requeue with backoff
+		if apierrors.IsNotFound(err) {
+			logger.Info("Task not found, skipping reconciliation")
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, err
 	}
 	if task == nil {
@@ -83,7 +91,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	result := r.reconcileTask(ctx, client.ObjectKeyFromObject(task), taskHandlerInstance)
 	if result.HasErrors() || result.NeedsRequeue() {
-
 		return result.ReconcileResult()
 	}
 

@@ -5,7 +5,6 @@
 package webhook
 
 import (
-
 	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/webhook/etcdcomponentprotection"
 	"github.com/gardener/etcd-druid/internal/webhook/etcdopstaskprotection"

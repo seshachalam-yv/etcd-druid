@@ -18,7 +18,7 @@ var (
 	//go:embed druid.gardener.cloud_etcdcopybackupstasks.yaml
 	etcdCopyBackupsTaskCRD string
 	//go:embed druid.gardener.cloud_etcdopstasks.yaml
-   	etcdOpsTaskCRD string
+	etcdOpsTaskCRD string
 )
 
 const (
@@ -50,7 +50,7 @@ func GetAll(k8sVersion string) (map[string]string, error) {
 	return map[string]string{
 		ResourceNameEtcd:                selectedEtcdCRD,
 		ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
-		ResourceNameEtcdOpsTask:    etcdOpsTaskCRD,
+		ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
 	}, nil
 }
 

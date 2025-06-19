@@ -1,11 +1,14 @@
 package etcdopstaskprotection
+
 import (
 	"context"
 	"fmt"
-	"net/http"	
+	"net/http"
+
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func (h *Handler) handleOnDemandSnapshot(ctx context.Context, task *druidv1alpha1.EtcdOpsTask) admission.Response {
@@ -25,7 +28,7 @@ func (h *Handler) handleOnDemandSnapshot(ctx context.Context, task *druidv1alpha
 		return admission.Denied("etcd cluster referenced in spec.etcdRef does not exist")
 	}
 	// Check if Etcd is healthy
-	if err := CheckEtcdReadiness(ctx, etcd); err != nil {
+	if err := CheckEtcdReadiness(etcd); err != nil {
 		h.logger.Info("Etcd is not ready", "namespace", task.Spec.EtcdRef.Namespace, "name", task.Spec.EtcdRef.Name)
 		return admission.Denied("etcd cluster referenced in spec.etcdRef is not ready: " + err.Error())
 	}
@@ -63,7 +66,7 @@ func (h *Handler) handleOnDemandSnapshot(ctx context.Context, task *druidv1alpha
 }
 
 // CheckEtcdReadiness checks if the etcd resource is ready
-func CheckEtcdReadiness(ctx context.Context, etcd *druidv1alpha1.Etcd) error {
+func CheckEtcdReadiness(etcd *druidv1alpha1.Etcd) error {
 	for _, condition := range etcd.Status.Conditions {
 		if condition.Type == druidv1alpha1.ConditionTypeReady {
 			if condition.Status == druidv1alpha1.ConditionTrue {

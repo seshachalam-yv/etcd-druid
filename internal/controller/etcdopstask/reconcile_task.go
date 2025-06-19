@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
 	"github.com/gardener/etcd-druid/internal/task"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // reconcileTask manages the lifecycle of an EtcdOperatorTask resource.
@@ -99,7 +99,7 @@ func (r *Reconciler) admitTask(ctx context.Context, taskObjKey client.ObjectKey,
 	}
 	result := taskHandler.Admit(ctx)
 	if result == nil {
-		err := fmt.Errorf("Admit returned nil TaskResult; this is a bug in the TaskHandler implementation")
+		err := fmt.Errorf("admit returned nil TaskResult; this is a bug in the TaskHandler implementation")
 		_ = r.recordLastError(ctx, taskObjKey, err)
 		return ctrlutils.ReconcileWithError(err)
 	}
@@ -163,7 +163,7 @@ func (r *Reconciler) transitionToInProgressState(ctx context.Context, taskObjKey
 // If the task succeeds, it updates the task status to succeeded and sets the LastOperation to completed.
 // If the task is already in a completed state, it skips the run operation.
 func (r *Reconciler) runTask(ctx context.Context, taskObjKey client.ObjectKey, taskHandler task.Handler) ctrlutils.ReconcileStepResult {
-	task, err := r.getTask(ctx, taskObjKey)
+	_, err := r.getTask(ctx, taskObjKey)
 	if err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
@@ -193,6 +193,15 @@ func (r *Reconciler) runTask(ctx context.Context, taskObjKey client.ObjectKey, t
 			if err := r.recordTaskState(ctx, taskObjKey, v1alpha1.TaskStateSucceeded); err != nil {
 				return ctrlutils.ReconcileWithError(err)
 			}
+		}
+
+		task, err := r.getTask(ctx, taskObjKey)
+		if err != nil {
+			return ctrlutils.ReconcileWithError(err)
+		}
+
+		if task.HasTTLExpired() {
+			return ctrlutils.ReconcileWithRequeue("Task completed, TTL expired, Requeueuing for cleanup")
 		}
 
 		return ctrlutils.ReconcileAfter(task.GetTimeToExpiry(), "Task completed, waiting for TTL to expire")

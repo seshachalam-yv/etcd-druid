@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// OnDemandSnapshotType represents the type of on-demand snapshot i.e, full or delta.
 type OnDemandSnapshotType string
 
 const (
@@ -19,29 +20,43 @@ const (
 	OnDemandSnapshotTypeDelta OnDemandSnapshotType = "delta"
 )
 
+// TaskState represents the state of an EtcdOpsTask.
 type TaskState string
 
 const (
-	TaskStateFailed     TaskState = "Failed"
-	TaskStatePending    TaskState = "Pending"
-	TaskStateRejected   TaskState = "Rejected"
-	TaskStateSucceeded  TaskState = "Succeeded"
+	// TaskStateFailed indicates that the task has failed.
+	TaskStateFailed TaskState = "Failed"
+	// TaskStatePending indicates that the task is pending and has not been picked up for execution.
+	TaskStatePending TaskState = "Pending"
+	// TaskStateRejected indicates that the task has been rejected.
+	TaskStateRejected TaskState = "Rejected"
+	// TaskStateSucceeded indicates that the task has succeeded.
+	TaskStateSucceeded TaskState = "Succeeded"
+	// TaskStateInProgress indicates that the task is currently in progress.
 	TaskStateInProgress TaskState = "InProgress"
 )
 
+// OperationState represents the state of an operation within an EtcdOpsTask.
 type OperationState string
 
 const (
+	// OperationStateInProgress represents an operation that is currently in progress.
 	OperationStateInProgress OperationState = "InProgress"
-	OperationStateCompleted  OperationState = "Completed"
-	OperationStateFailed     OperationState = "Failed"
+	// OperationStateCompleted represents an operation that has completed successfully.
+	OperationStateCompleted OperationState = "Completed"
+	// OperationStateFailed represents an operation that has failed.
+	OperationStateFailed OperationState = "Failed"
 )
 
+// OperationPhase represents the lifecycle phase of an operation within an EtcdOpsTask.
 type OperationPhase string
 
 const (
-	OperationPhaseAdmit   OperationPhase = "Admit"
+	// OperationPhaseAdmit represents the phase where the operation has passed the pre-conditions.
+	OperationPhaseAdmit OperationPhase = "Admit"
+	// OperationPhaseRunning represents the phase where the operation is currently running.
 	OperationPhaseRunning OperationPhase = "Run"
+	// OperationPhaseCleanup represents the phase where the operation is cleaning up after completion.
 	OperationPhaseCleanup OperationPhase = "Cleanup"
 )
 
@@ -67,6 +82,7 @@ type EtcdOpsTask struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
+
 // EtcdOpsTaskList contains a list of EtcdOpsTask objects.
 type EtcdOpsTaskList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -105,6 +121,7 @@ type EtcdOpsTaskConfig struct {
 	OnDemandSnapshot *OnDemandSnapshotConfig `json:"onDemandSnapshotConfig,omitempty"` // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 }
 
+// EtcdReference is a reference to an Etcd resource on which the task is to be performed.
 type EtcdReference struct {
 	// Name is the name of the Etcd resource.
 	// +kubebuilder:validation:Required
@@ -115,6 +132,7 @@ type EtcdReference struct {
 	Namespace string `json:"namespace"`
 }
 
+// EtcdOpsTaskStatus defines the observed state of EtcdOpsTask.
 type EtcdOpsTaskStatus struct {
 	// State is the last known state of the task.
 	// +optional
@@ -138,6 +156,7 @@ type EtcdOpsTaskStatus struct {
 	LastOperation *EtcdOpsLastOperation `json:"lastOperation,omitempty"`
 }
 
+// EtcdOpsTaskLastError represents the last error encountered while processing the task.
 type EtcdOpsTaskLastError struct {
 	// Code is an error code that uniquely identifies an error.
 	Code ErrorCode `json:"code"`
@@ -149,6 +168,7 @@ type EtcdOpsTaskLastError struct {
 	ObservedAt metav1.Time `json:"observedAt"`
 }
 
+// EtcdOpsLastOperation represents the last known operation status of an EtcdOpsTask.
 type EtcdOpsLastOperation struct {
 	// State is the status of the last operation, one of pending, progress, completed, failed.
 	State OperationState `json:"state"`
@@ -177,11 +197,12 @@ func (t *EtcdOpsTask) IsMarkedForDeletion() bool {
 	return t.ObjectMeta.DeletionTimestamp != nil
 }
 
-// TTLHasExpired returns true if the TTL after finished has expired.
+// HasTTLExpired returns true if the TTL after finished has expired.
 func (t *EtcdOpsTask) HasTTLExpired() bool {
 	return t.GetTimeToExpiry() <= 0
 }
 
+// GetTTL returns the TTL duration for the task as set in the spec.
 func (t *EtcdOpsTask) GetTTL() time.Duration {
 	return time.Duration(t.Spec.TTLSecondsAfterFinished) * time.Second
 }
@@ -212,6 +233,7 @@ func (t *EtcdOpsTask) GetTimeToExpiry() time.Duration {
 	return remaining
 }
 
+// OnDemandSnapshotConfig defines the configuration for on-demand snapshot tasks.
 type OnDemandSnapshotConfig struct {
 	// Type specifies the type of snapshot: "full" or "delta".
 	// +kubebuilder:validation:Enum=full;delta

@@ -6,6 +6,7 @@ import (
 	"github.com/gardener/etcd-druid/api/core/v1alpha1"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
 	"github.com/gardener/etcd-druid/internal/task"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -68,18 +69,17 @@ func (r *Reconciler) cleanupTaskResources(ctx context.Context, taskObjKey client
 		// 1. Task is not supported by the controller
 		// 2. Task admit failed
 		// In these cases, we don't want to call the cleanup method of the task handler. Since there is no cleanup to be done, we can skip this step.
-		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted,""); err != nil {
+		if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted, ""); err != nil {
 			return ctrlutils.ReconcileWithError(err)
 		}
 		return ctrlutils.ContinueReconcile()
 	}
 
-	r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateInProgress, "")
+	if err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateInProgress, ""); err != nil {
+		return ctrlutils.ReconcileWithError(err)
+	}
 
 	result := taskHandler.Cleanup(ctx)
-	if result != nil && result.Error != nil {
-		return ctrlutils.ReconcileWithError(result.Error)
-	}
 	if result != nil && result.Completed {
 		if result.Error != nil {
 			err := r.recordLastError(ctx, taskObjKey, result.Error)
@@ -92,7 +92,10 @@ func (r *Reconciler) cleanupTaskResources(ctx context.Context, taskObjKey client
 			}
 			return ctrlutils.ReconcileWithError(result.Error)
 		}
-		r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted, result.Description)
+		err := r.recordLastOperation(ctx, taskObjKey, v1alpha1.OperationPhaseCleanup, v1alpha1.OperationStateCompleted, result.Description)
+		if err != nil {
+			return ctrlutils.ReconcileWithError(err)
+		}
 	} else {
 		if result.Error != nil {
 			err := r.recordLastError(ctx, taskObjKey, result.Error)
@@ -121,9 +124,9 @@ func (r *Reconciler) removeTaskFinalizer(ctx context.Context, taskObjKey client.
 
 // removeTask deletes the EtcdOpsTask resource from the cluster.
 func (r *Reconciler) removeTask(ctx context.Context, taskObjKey client.ObjectKey, _ task.Handler) ctrlutils.ReconcileStepResult {
-	task := &v1alpha1.EtcdOpsTask{}
-	if err := r.client.Get(ctx, taskObjKey, task); err != nil {
-		return ctrlutils.ReconcileWithError(client.IgnoreNotFound(err))
+	task, err := r.getTask(ctx, taskObjKey)
+	if err != nil {
+		return ctrlutils.ReconcileWithError(err)
 	}
 	if err := r.client.Delete(ctx, task); err != nil {
 		return ctrlutils.ReconcileWithError(client.IgnoreNotFound(err))
