@@ -67,6 +67,7 @@ _Appears in:_
 | `compaction` _[CompactionControllerConfiguration](#compactioncontrollerconfiguration)_ | Compaction is the configuration for the compaction controller. |  |  |
 | `etcdCopyBackupsTask` _[EtcdCopyBackupsTaskControllerConfiguration](#etcdcopybackupstaskcontrollerconfiguration)_ | EtcdCopyBackupsTask is the configuration for the EtcdCopyBackupsTask controller. |  |  |
 | `secret` _[SecretControllerConfiguration](#secretcontrollerconfiguration)_ | Secret is the configuration for the Secret controller. |  |  |
+| `etcdOpsTask` _[EtcdOpsTaskControllerConfiguration](#etcdopstaskcontrollerconfiguration)_ | EtcdOpsTask is the configuration for the EtcdOpsTask controller. |  |  |
 
 
 #### EtcdComponentProtectionWebhookConfiguration
@@ -141,6 +142,42 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `notReadyThreshold` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | NotReadyThreshold is the duration after which an etcd member's state is considered `NotReady`. |  |  |
 | `unknownThreshold` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | UnknownThreshold is the duration after which an etcd member's state is considered `Unknown`. |  |  |
+
+
+#### EtcdOpsTaskControllerConfiguration
+
+
+
+EtcdOpsTaskControllerConfiguration defines the configuration for the EtcdOpsTask controller.
+
+
+
+_Appears in:_
+- [ControllerConfiguration](#controllerconfiguration)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `concurrentSyncs` _integer_ | ConcurrentSyncs is the max number of concurrent workers that can be run, each worker servicing a reconcile request. |  |  |
+| `enableEtcdSpecAutoReconcile` _boolean_ | EnableEtcdSpecAutoReconcile controls how the Etcd Spec is reconciled for EtcdOpsTask. If set to true, then any change in Etcd spec<br />will automatically trigger a reconciliation of the Etcd resource. If set to false, then an operator needs to<br />explicitly set gardener.cloud/operation=reconcile annotation on the Etcd resource to trigger reconciliation<br />of the Etcd spec. |  |  |
+| `disableEtcdServiceAccountAutomount` _boolean_ | DisableEtcdServiceAccountAutomount controls the auto-mounting of service account token for EtcdOpsTask resources. |  |  |
+| `etcdStatusSyncPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdStatusSyncPeriod is the duration after which an event will be re-queued ensuring etcd status synchronization for EtcdOpsTask. |  |  |
+| `requeueInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | RequeueInterval is the duration to wait before re-queuing a reconcile request for EtcdOpsTask. |  |  |
+
+
+#### EtcdOpsTaskWebhookConfiguration
+
+
+
+EtcdOpsTaskWebhookConfiguration defines the configuration for the EtcdOpsTask webhook.
+
+
+
+_Appears in:_
+- [WebhookConfiguration](#webhookconfiguration)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled indicates whether the EtcdOpsTask webhook is enabled. |  |  |
 
 
 #### LeaderElectionConfiguration
@@ -321,6 +358,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `etcdComponentProtection` _[EtcdComponentProtectionWebhookConfiguration](#etcdcomponentprotectionwebhookconfiguration)_ | EtcdComponentProtection is the configuration for EtcdComponentProtection webhook. |  |  |
+| `etcdOpsTaskProtection` _[EtcdOpsTaskWebhookConfiguration](#etcdopstaskwebhookconfiguration)_ | EtcdOpsTask is the configuration for EtcdOpsTask webhook. |  |  |
 
 
 
@@ -686,7 +724,7 @@ _Appears in:_
 
 
 
-
+EtcdOpsLastOperation represents the last known operation status of an EtcdOpsTask.
 
 
 
@@ -741,7 +779,7 @@ _Appears in:_
 
 
 
-
+EtcdOpsTaskLastError represents the last error encountered while processing the task.
 
 
 
@@ -777,7 +815,7 @@ _Appears in:_
 
 
 
-
+EtcdOpsTaskStatus defines the observed state of EtcdOpsTask.
 
 
 
@@ -797,7 +835,7 @@ _Appears in:_
 
 
 
-
+EtcdReference is a reference to an Etcd resource on which the task is to be performed.
 
 
 
@@ -1011,7 +1049,7 @@ _Appears in:_
 
 
 
-
+OnDemandSnapshotConfig defines the configuration for on-demand snapshot tasks.
 
 
 
@@ -1029,7 +1067,7 @@ _Appears in:_
 
 _Underlying type:_ _string_
 
-
+OnDemandSnapshotType represents the type of on-demand snapshot i.e, full or delta.
 
 
 
@@ -1046,7 +1084,7 @@ _Appears in:_
 
 _Underlying type:_ _string_
 
-
+OperationPhase represents the lifecycle phase of an operation within an EtcdOpsTask.
 
 
 
@@ -1055,16 +1093,16 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `Admit` |  |
-| `Run` |  |
-| `Cleanup` |  |
+| `Admit` | OperationPhaseAdmit represents the phase where the operation has passed the pre-conditions.<br /> |
+| `Run` | OperationPhaseRunning represents the phase where the operation is currently running.<br /> |
+| `Cleanup` | OperationPhaseCleanup represents the phase where the operation is cleaning up after completion.<br /> |
 
 
 #### OperationState
 
 _Underlying type:_ _string_
 
-
+OperationState represents the state of an operation within an EtcdOpsTask.
 
 
 
@@ -1073,9 +1111,9 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `InProgress` |  |
-| `Completed` |  |
-| `Failed` |  |
+| `InProgress` | OperationStateInProgress represents an operation that is currently in progress.<br /> |
+| `Completed` | OperationStateCompleted represents an operation that has completed successfully.<br /> |
+| `Failed` | OperationStateFailed represents an operation that has failed.<br /> |
 
 
 #### SchedulingConstraints
@@ -1186,7 +1224,7 @@ _Appears in:_
 
 _Underlying type:_ _string_
 
-
+TaskState represents the state of an EtcdOpsTask.
 
 
 
@@ -1195,11 +1233,11 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `Failed` |  |
-| `Pending` |  |
-| `Rejected` |  |
-| `Succeeded` |  |
-| `InProgress` |  |
+| `Failed` | TaskStateFailed indicates that the task has failed.<br /> |
+| `Pending` | TaskStatePending indicates that the task is pending and has not been picked up for execution.<br /> |
+| `Rejected` | TaskStateRejected indicates that the task has been rejected.<br /> |
+| `Succeeded` | TaskStateSucceeded indicates that the task has succeeded.<br /> |
+| `InProgress` | TaskStateInProgress indicates that the task is currently in progress.<br /> |
 
 
 #### WaitForFinalSnapshotSpec
@@ -1217,362 +1255,5 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled specifies whether to wait for a final full snapshot before copying backups. |  |  |
 | `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | Timeout is the timeout for waiting for a final full snapshot. When this timeout expires, the copying of backups<br />will be performed anyway. No timeout or 0 means wait forever. |  |  |
-
-
-
-## operator.config.druid.gardener.cloud/v1alpha1
-
-
-
-
-#### ClientConnectionConfiguration
-
-
-
-ClientConnectionConfiguration defines the configuration for constructing a client.Client to connect to k8s kube-apiserver.
-
-
-
-_Appears in:_
-- [OperatorConfiguration](#operatorconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `qps` _float_ | QPS controls the number of queries per second allowed for a connection.<br />Setting this to a negative value will disable client-side rate limiting. |  |  |
-| `burst` _integer_ | Burst allows extra queries to accumulate when a client is exceeding its rate. |  |  |
-| `contentType` _string_ | ContentType is the content type used when sending data to the server from this client. |  |  |
-| `acceptContentTypes` _string_ | AcceptContentTypes defines the Accept header sent by clients when connecting to the server,<br />overriding the default value of 'application/json'. This field will control all connections<br />to the server used by a particular client. |  |  |
-
-
-#### CompactionControllerConfiguration
-
-
-
-CompactionControllerConfiguration defines the configuration for the compaction controller.
-
-
-
-_Appears in:_
-- [ControllerConfiguration](#controllerconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `enabled` _boolean_ | Enabled specifies whether backup compaction should be enabled. |  |  |
-| `concurrentSyncs` _integer_ | ConcurrentSyncs is the max number of concurrent workers that can be run, each worker servicing a reconcile request. |  |  |
-| `eventsThreshold` _integer_ | EventsThreshold denotes total number of etcd events to be reached upon which a backup compaction job is triggered. |  |  |
-| `activeDeadlineDuration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | ActiveDeadlineDuration is the duration after which a running compaction job will be killed. |  |  |
-| `metricsScrapeWaitDuration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | MetricsScrapeWaitDuration is the duration to wait for after compaction job is completed, to allow Prometheus metrics to be scraped |  |  |
-
-
-#### ControllerConfiguration
-
-
-
-ControllerConfiguration defines the configuration for the controllers.
-
-
-
-_Appears in:_
-- [OperatorConfiguration](#operatorconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `disableLeaseCache` _boolean_ | DisableLeaseCache disables the cache for lease.coordination.k8s.io resources.<br />Deprecated: This field will be eventually removed. It is recommended to not use this.<br />It has only been introduced to allow for backward compatibility with the old CLI flags. |  |  |
-| `etcd` _[EtcdControllerConfiguration](#etcdcontrollerconfiguration)_ | Etcd is the configuration for the Etcd controller. |  |  |
-| `compaction` _[CompactionControllerConfiguration](#compactioncontrollerconfiguration)_ | Compaction is the configuration for the compaction controller. |  |  |
-| `etcdCopyBackupsTask` _[EtcdCopyBackupsTaskControllerConfiguration](#etcdcopybackupstaskcontrollerconfiguration)_ | EtcdCopyBackupsTask is the configuration for the EtcdCopyBackupsTask controller. |  |  |
-| `secret` _[SecretControllerConfiguration](#secretcontrollerconfiguration)_ | Secret is the configuration for the Secret controller. |  |  |
-| `etcdOpsTask` _[EtcdOpsTaskControllerConfiguration](#etcdopstaskcontrollerconfiguration)_ | EtcdOpsTask is the configuration for the EtcdOpsTask controller. |  |  |
-
-
-#### EtcdComponentProtectionWebhookConfiguration
-
-
-
-EtcdComponentProtectionWebhookConfiguration defines the configuration for EtcdComponentProtection webhook.
-NOTE: At least one of ReconcilerServiceAccountFQDN or ServiceAccountInfo must be set. It is recommended to switch to ServiceAccountInfo.
-
-
-
-_Appears in:_
-- [WebhookConfiguration](#webhookconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `enabled` _boolean_ | Enabled indicates whether the EtcdComponentProtection webhook is enabled. |  |  |
-| `reconcilerServiceAccountFQDN` _string_ | ReconcilerServiceAccountFQDN is the FQDN of the reconciler service account used by the etcd-druid operator.<br />Deprecated: Please use ServiceAccountInfo instead and ensure that both Name and Namespace are set via projected volumes and downward API in the etcd-druid deployment spec. |  |  |
-| `serviceAccountInfo` _[ServiceAccountInfo](#serviceaccountinfo)_ | ServiceAccountInfo contains paths to gather etcd-druid service account information. |  |  |
-| `exemptServiceAccounts` _string array_ | ExemptServiceAccounts is a list of service accounts that are exempt from Etcd Components Webhook checks. |  |  |
-
-
-#### EtcdControllerConfiguration
-
-
-
-EtcdControllerConfiguration defines the configuration for the Etcd controller.
-
-
-
-_Appears in:_
-- [ControllerConfiguration](#controllerconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `concurrentSyncs` _integer_ | ConcurrentSyncs is the max number of concurrent workers that can be run, each worker servicing a reconcile request. |  |  |
-| `enableEtcdSpecAutoReconcile` _boolean_ | EnableEtcdSpecAutoReconcile controls how the Etcd Spec is reconciled. If set to true, then any change in Etcd spec<br />will automatically trigger a reconciliation of the Etcd resource. If set to false, then an operator needs to<br />explicitly set gardener.cloud/operation=reconcile annotation on the Etcd resource to trigger reconciliation<br />of the Etcd spec.<br />NOTE: Decision to enable it should be carefully taken as spec updates could potentially result in rolling update<br />of the StatefulSet which will cause a minor downtime for a single node etcd cluster and can potentially cause a<br />downtime for a multi-node etcd cluster. |  |  |
-| `disableEtcdServiceAccountAutomount` _boolean_ | DisableEtcdServiceAccountAutomount controls the auto-mounting of service account token for etcd StatefulSets. |  |  |
-| `etcdStatusSyncPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdStatusSyncPeriod is the duration after which an event will be re-queued ensuring etcd status synchronization. |  |  |
-| `etcdMember` _[EtcdMemberConfiguration](#etcdmemberconfiguration)_ | EtcdMember holds configuration related to etcd members. |  |  |
-
-
-#### EtcdCopyBackupsTaskControllerConfiguration
-
-
-
-EtcdCopyBackupsTaskControllerConfiguration defines the configuration for the EtcdCopyBackupsTask controller.
-
-
-
-_Appears in:_
-- [ControllerConfiguration](#controllerconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `enabled` _boolean_ | Enabled specifies whether EtcdCopyBackupsTaskController should be enabled. |  |  |
-| `concurrentSyncs` _integer_ | ConcurrentSyncs is the max number of concurrent workers that can be run, each worker servicing a reconcile request. |  |  |
-
-
-#### EtcdMemberConfiguration
-
-
-
-EtcdMemberConfiguration holds configuration related to etcd members.
-
-
-
-_Appears in:_
-- [EtcdControllerConfiguration](#etcdcontrollerconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `notReadyThreshold` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | NotReadyThreshold is the duration after which an etcd member's state is considered `NotReady`. |  |  |
-| `unknownThreshold` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | UnknownThreshold is the duration after which an etcd member's state is considered `Unknown`. |  |  |
-
-
-#### EtcdOpsTaskControllerConfiguration
-
-
-
-EtcdOpsTaskControllerConfiguration defines the configuration for the EtcdOpsTask controller.
-
-
-
-_Appears in:_
-- [ControllerConfiguration](#controllerconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `concurrentSyncs` _integer_ | ConcurrentSyncs is the max number of concurrent workers that can be run, each worker servicing a reconcile request. |  |  |
-| `enableEtcdSpecAutoReconcile` _boolean_ | EnableEtcdSpecAutoReconcile controls how the Etcd Spec is reconciled for EtcdOpsTask. If set to true, then any change in Etcd spec<br />will automatically trigger a reconciliation of the Etcd resource. If set to false, then an operator needs to<br />explicitly set gardener.cloud/operation=reconcile annotation on the Etcd resource to trigger reconciliation<br />of the Etcd spec. |  |  |
-| `disableEtcdServiceAccountAutomount` _boolean_ | DisableEtcdServiceAccountAutomount controls the auto-mounting of service account token for EtcdOpsTask resources. |  |  |
-| `etcdStatusSyncPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdStatusSyncPeriod is the duration after which an event will be re-queued ensuring etcd status synchronization for EtcdOpsTask. |  |  |
-| `requeueInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | RequeueInterval is the duration to wait before re-queuing a reconcile request for EtcdOpsTask. |  |  |
-
-
-#### EtcdOpsTaskWebhookConfiguration
-
-
-
-
-
-
-
-_Appears in:_
-- [WebhookConfiguration](#webhookconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `enabled` _boolean_ | Enabled indicates whether the EtcdOpsTask webhook is enabled. |  |  |
-
-
-#### LeaderElectionConfiguration
-
-
-
-LeaderElectionConfiguration defines the configuration for the leader election.
-It should be enabled when you deploy etcd-druid in HA mode. For single replica etcd-druid deployments
-it will not really serve any purpose.
-
-
-
-_Appears in:_
-- [OperatorConfiguration](#operatorconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `enabled` _boolean_ | Enabled specifies whether leader election is enabled. Set this<br />to true when running replicated instances of the operator for high availability. |  |  |
-| `leaseDuration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | LeaseDuration is the duration that non-leader candidates will wait<br />after observing a leadership renewal until attempting to acquire<br />leadership of the occupied but un-renewed leader slot. This is effectively the<br />maximum duration that a leader can be stopped before it is replaced<br />by another candidate. This is only applicable if leader election is<br />enabled. |  |  |
-| `renewDeadline` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | RenewDeadline is the interval between attempts by the acting leader to<br />renew its leadership before it stops leading. This must be less than or<br />equal to the lease duration.<br />This is only applicable if leader election is enabled. |  |  |
-| `retryPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | RetryPeriod is the duration leader elector clients should wait<br />between attempting acquisition and renewal of leadership.<br />This is only applicable if leader election is enabled. |  |  |
-| `resourceLock` _string_ | ResourceLock determines which resource lock to use for leader election.<br />This is only applicable if leader election is enabled. |  |  |
-| `resourceName` _string_ | ResourceName determines the name of the resource that leader election<br />will use for holding the leader lock.<br />This is only applicable if leader election is enabled. |  |  |
-
-
-#### LogConfiguration
-
-
-
-LogConfiguration contains the configuration for logging.
-
-
-
-_Appears in:_
-- [OperatorConfiguration](#operatorconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `logLevel` _[LogLevel](#loglevel)_ | LogLevel is the level/severity for the logs. Must be one of [info,debug,error]. |  |  |
-| `logFormat` _[LogFormat](#logformat)_ | LogFormat is the output format for the logs. Must be one of [text,json]. |  |  |
-
-
-#### LogFormat
-
-_Underlying type:_ _string_
-
-LogFormat is the format of the log.
-
-
-
-_Appears in:_
-- [LogConfiguration](#logconfiguration)
-
-| Field | Description |
-| --- | --- |
-| `json` | LogFormatJSON is the JSON log format.<br /> |
-| `text` | LogFormatText is the text log format.<br /> |
-
-
-#### LogLevel
-
-_Underlying type:_ _string_
-
-LogLevel represents the level for logging.
-
-
-
-_Appears in:_
-- [LogConfiguration](#logconfiguration)
-
-| Field | Description |
-| --- | --- |
-| `debug` | LogLevelDebug is the debug log level, i.e. the most verbose.<br /> |
-| `info` | LogLevelInfo is the default log level.<br /> |
-| `error` | LogLevelError is a log level where only errors are logged.<br /> |
-
-
-
-
-#### SecretControllerConfiguration
-
-
-
-SecretControllerConfiguration defines the configuration for the Secret controller.
-
-
-
-_Appears in:_
-- [ControllerConfiguration](#controllerconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `concurrentSyncs` _integer_ | ConcurrentSyncs is the max number of concurrent workers that can be run, each worker servicing a reconcile request. |  |  |
-
-
-#### Server
-
-
-
-Server contains information for HTTP(S) server configuration.
-
-
-
-_Appears in:_
-- [ServerConfiguration](#serverconfiguration)
-- [TLSServer](#tlsserver)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `bindAddress` _string_ | BindAddress is the IP address on which to listen for the specified port. |  |  |
-| `port` _integer_ | Port is the port on which to serve unsecured, unauthenticated access. |  |  |
-
-
-#### ServerConfiguration
-
-
-
-ServerConfiguration contains the server configurations.
-
-
-
-_Appears in:_
-- [OperatorConfiguration](#operatorconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `webhooks` _[TLSServer](#tlsserver)_ | Webhooks is the configuration for the TLS webhook server. |  |  |
-| `metrics` _[Server](#server)_ | Metrics is the configuration for serving the metrics endpoint. |  |  |
-
-
-#### ServiceAccountInfo
-
-
-
-ServiceAccountInfo contains paths to gather etcd-druid service account information.
-Usually downward API and projected volumes are used in the deployment specification of etcd-druid to provide this information as mounted volume files.
-
-
-
-_Appears in:_
-- [EtcdComponentProtectionWebhookConfiguration](#etcdcomponentprotectionwebhookconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `name` _string_ | Name is the name of the service account associated with etcd-druid deployment. |  |  |
-| `namespace` _string_ | Namespace is the namespace in which the service account has been deployed.<br />Usually this information is usually available at /var/run/secrets/kubernetes.io/serviceaccount/namespace.<br />However, if automountServiceAccountToken is set to false then this file will not be available. |  |  |
-
-
-#### TLSServer
-
-
-
-TLSServer is the configuration for a TLS enabled server.
-
-
-
-_Appears in:_
-- [ServerConfiguration](#serverconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `bindAddress` _string_ | BindAddress is the IP address on which to listen for the specified port. |  |  |
-| `port` _integer_ | Port is the port on which to serve unsecured, unauthenticated access. |  |  |
-| `serverCertDir` _string_ | ServerCertDir is the path to a directory containing the server's TLS certificate and key (the files must be<br />named tls.crt and tls.key respectively). |  |  |
-
-
-#### WebhookConfiguration
-
-
-
-WebhookConfiguration defines the configuration for admission webhooks.
-
-
-
-_Appears in:_
-- [OperatorConfiguration](#operatorconfiguration)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `etcdComponentProtection` _[EtcdComponentProtectionWebhookConfiguration](#etcdcomponentprotectionwebhookconfiguration)_ | EtcdComponentProtection is the configuration for EtcdComponentProtection webhook. |  |  |
-| `etcdOpsTask` _[EtcdOpsTaskWebhookConfiguration](#etcdopstaskwebhookconfiguration)_ | EtcdOpsTask is the configuration for EtcdOpsTask webhook. |  |  |
 
 

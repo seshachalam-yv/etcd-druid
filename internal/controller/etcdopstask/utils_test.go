@@ -121,7 +121,7 @@ func TestRecordLastOperation(t *testing.T) {
 				Name:      tt.task.Name,
 				Namespace: tt.task.Namespace,
 			}
-			if tt.initialLastOp != nil {
+		if tt.initialLastOp != nil {
 				tt.task.Status.LastOperation = tt.initialLastOp
 				err = cl.Status().Update(context.TODO(), tt.task)
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to update task status with initial LastOperation")

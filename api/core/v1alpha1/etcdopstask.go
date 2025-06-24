@@ -65,6 +65,7 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:resource:shortName=eot
 
 // EtcdOpsTask represents an out-of-band operator task resource.
 type EtcdOpsTask struct {

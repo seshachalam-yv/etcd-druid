@@ -11,6 +11,8 @@ spec:
     kind: EtcdOpsTask
     listKind: EtcdOpsTaskList
     plural: etcdopstasks
+    shortNames:
+    - eot
     singular: etcdopstask
   scope: Namespaced
   versions:
@@ -123,6 +125,8 @@ spec:
                 description: LastErrors represents the errors when processing the
                   task.
                 items:
+                  description: EtcdOpsTaskLastError represents the last error encountered
+                    while processing the task.
                   properties:
                     code:
                       description: Code is an error code that uniquely identifies

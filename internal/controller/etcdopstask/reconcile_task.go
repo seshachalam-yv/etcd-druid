@@ -54,8 +54,8 @@ func (r *Reconciler) ensureTaskFinalizer(ctx context.Context, taskObjKey client.
 	if controllerutil.ContainsFinalizer(meta, FinalizerName) {
 		return ctrlutils.ContinueReconcile()
 	}
-	controllerutil.AddFinalizer(meta, FinalizerName)
 	patch := client.MergeFrom(meta.DeepCopy())
+	controllerutil.AddFinalizer(meta, FinalizerName)
 	if err := r.client.Patch(ctx, meta, patch); err != nil {
 		return ctrlutils.ReconcileWithError(err)
 	}
