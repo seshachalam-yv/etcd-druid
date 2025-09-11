@@ -66,3 +66,4 @@ charts/crds/*
 # go workspace files
 go.work
 go.work.sum
+.gocache
