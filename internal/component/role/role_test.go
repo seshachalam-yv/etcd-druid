@@ -221,6 +221,11 @@ func matchRole(g *WithT, etcd *druidv1alpha1.Etcd, actualRole rbacv1.Role) {
 				Resources: []string{"pods"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
+			rbacv1.PolicyRule{
+				APIGroups: []string{"druid.gardener.cloud"},
+				Resources: []string{"etcdmembers"},
+				Verbs:     []string{"get", "list", "patch", "update", "watch"},
+			},
 		),
 	}))
 }

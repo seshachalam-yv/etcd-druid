@@ -136,6 +136,11 @@ func buildResource(etcd *druidv1alpha1.Etcd, role *rbacv1.Role) {
 			Resources: []string{"pods"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		{
+			APIGroups: []string{"druid.gardener.cloud"},
+			Resources: []string{"etcdmembers"},
+			Verbs:     []string{"get", "list", "patch", "update", "watch"},
+		},
 	}
 }
 
