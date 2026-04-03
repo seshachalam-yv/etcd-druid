@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"testing"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	testutils "github.com/gardener/etcd-druid/test/utils"
 )
@@ -176,4 +177,62 @@ type testError struct {
 
 func (e *testError) Error() string {
 	return e.msg
+}
+
+// TestFullSnapshotHTTPMethod verifies that:
+// - When UseEtcdSteward is disabled, fullSnapshot uses GET (etcd-backup-restore behaviour).
+// - When UseEtcdSteward is enabled, fullSnapshot uses POST (etcd-steward behaviour).
+func TestFullSnapshotHTTPMethod(t *testing.T) {
+	var backupPort int32 = 8080
+	etcd := testutils.EtcdBuilderWithoutDefaults(testutils.TestEtcdName, testutils.TestNamespace).
+		WithBackupPort(&backupPort).
+		Build()
+
+	testCases := []struct {
+		name           string
+		useEtcdSteward bool
+		wantMethod     string
+	}{
+		{
+			name:           "gate disabled: uses GET (etcd-backup-restore)",
+			useEtcdSteward: false,
+			wantMethod:     http.MethodGet,
+		},
+		{
+			name:           "gate enabled: uses POST (etcd-steward)",
+			useEtcdSteward: true,
+			wantMethod:     http.MethodPost,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+				map[string]bool{druidconfigv1alpha1.UseEtcdSteward: tc.useEtcdSteward},
+			)
+			if err != nil {
+				t.Fatalf("failed to set feature gate: %v", err)
+			}
+			t.Cleanup(func() {
+				_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+					map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+				)
+			})
+
+			var capturedMethod string
+			mockClient := &mockHTTPClient{
+				DoFunc: func(req *http.Request) (*http.Response, error) {
+					capturedMethod = req.Method
+					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+				},
+			}
+
+			if err := fullSnapshot(t.Context(), etcd, mockClient, "http"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if capturedMethod != tc.wantMethod {
+				t.Errorf("HTTP method: got %q, want %q", capturedMethod, tc.wantMethod)
+			}
+		})
+	}
 }
