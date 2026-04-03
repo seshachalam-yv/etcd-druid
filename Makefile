@@ -250,6 +250,21 @@ deploy-dev: $(SKAFFOLD) $(HELM) prepare-helm-charts
 deploy-debug: $(SKAFFOLD) $(HELM) prepare-helm-charts
 	@$(HACK_DIR)/deploy-local.sh debug --cleanup=false -m etcd-druid -p debug -n $(NAMESPACE)
 
+# deploy-steward-dev builds etcd-steward, pushes it to the local registry, and
+# deploys etcd-druid with the etcd-steward image override in one command.
+#
+# Usage:
+#   make deploy-steward-dev STEWARD_DIR=/path/to/etcd-steward
+#
+# Pre-requisite: make kind-up must have been run first to set up the local registry.
+.PHONY: deploy-steward-dev
+deploy-steward-dev: $(SKAFFOLD) $(HELM) prepare-helm-charts
+ifndef STEWARD_DIR
+	$(error STEWARD_DIR is required. Usage: make deploy-steward-dev STEWARD_DIR=/path/to/etcd-steward)
+endif
+	@$(HACK_DIR)/build-steward.sh "$(STEWARD_DIR)"
+	@$(HACK_DIR)/deploy-local.sh run -m etcd-druid -p etcd-steward-dev -n $(NAMESPACE)
+
 .PHONY: undeploy
 undeploy: $(SKAFFOLD) $(HELM)
 	$(SKAFFOLD) delete -m etcd-druid -n $(NAMESPACE)

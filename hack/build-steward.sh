@@ -4,7 +4,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # build-steward.sh — cross-compile etcd-steward for linux/arm64, build a
-# distroless container image, and load it into the etcd-druid-e2e KinD cluster.
+# distroless container image, and push it to the local KinD registry.
+#
+# The image is pushed to the local registry (localhost:5001) that is set up by
+# make kind-up. This avoids the need for `kind load` and makes the image
+# available to pods without any additional cluster-side configuration.
 #
 # Usage:
 #   ./hack/build-steward.sh <etcd-steward-source-dir> [image-tag]
@@ -13,9 +17,13 @@
 #   etcd-steward-source-dir   Path to the etcd-steward repository (required)
 #   image-tag                 Docker image tag (default: local)
 #
+# Environment:
+#   LOCAL_REGISTRY   Local registry host:port (default: localhost:5001)
+#   KIND_CLUSTER     KinD cluster name to verify existence (default: etcd-druid-e2e)
+#
 # Example:
 #   ./hack/build-steward.sh ~/go/src/github.com/gardener/etcd-steward
-#   ./hack/build-steward.sh ~/go/src/github.com/gardener/etcd-steward phase8
+#   ./hack/build-steward.sh ~/go/src/github.com/gardener/etcd-steward local
 
 set -o errexit
 set -o nounset
@@ -23,6 +31,7 @@ set -o pipefail
 
 STEWARD_DIR="${1:-}"
 IMAGE_TAG="${2:-local}"
+LOCAL_REGISTRY="${LOCAL_REGISTRY:-localhost:5001}"
 KIND_CLUSTER="${KIND_CLUSTER:-etcd-druid-e2e}"
 BUILD_DIR="$(mktemp -d)"
 
@@ -67,33 +76,28 @@ function build_binary() {
   echo "Binary built: ${BUILD_DIR}/bin/etcd-steward"
 }
 
-function build_image() {
-  echo "Building docker image etcd-steward:${IMAGE_TAG}..."
+function build_and_push_image() {
+  local full_image="${LOCAL_REGISTRY}/etcd-steward:${IMAGE_TAG}"
+  echo "Building docker image ${full_image}..."
   cat > "${BUILD_DIR}/Dockerfile" <<'EOF'
 FROM gcr.io/distroless/static-debian11:nonroot
 WORKDIR /
 COPY bin/etcd-steward /etcd-steward
 ENTRYPOINT ["/etcd-steward"]
 EOF
-  docker build --platform linux/arm64 -t "etcd-steward:${IMAGE_TAG}" "${BUILD_DIR}"
-  echo "Image built: etcd-steward:${IMAGE_TAG}"
-}
-
-function load_into_kind() {
-  echo "Loading etcd-steward:${IMAGE_TAG} into KinD cluster '${KIND_CLUSTER}'..."
-  kind load docker-image "etcd-steward:${IMAGE_TAG}" --name "${KIND_CLUSTER}"
-  echo "Image loaded."
+  docker build --platform linux/arm64 -t "${full_image}" "${BUILD_DIR}"
+  echo "Pushing ${full_image} to local registry..."
+  docker push "${full_image}"
+  echo "Image available at ${full_image}"
 }
 
 function main() {
   check_prereqs
   build_binary
-  build_image
-  load_into_kind
+  build_and_push_image
   echo ""
-  echo "Done. etcd-steward:${IMAGE_TAG} is ready in cluster '${KIND_CLUSTER}'."
-  echo "Deploy etcd-druid with the etcd-steward-dev skaffold profile:"
-  echo "  ./hack/deploy-local.sh run -p etcd-steward-dev"
+  echo "Done. etcd-steward:${IMAGE_TAG} is available in the local registry."
+  echo "Deploy etcd-druid with: make deploy-steward-dev STEWARD_DIR=${STEWARD_DIR}"
 }
 
 main "$@"

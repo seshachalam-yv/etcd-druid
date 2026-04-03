@@ -2,8 +2,11 @@
 # Applied by the etcd-steward-dev skaffold profile on top of values.yaml.
 # Overrides the image vector so every Etcd CR that does not set spec.backup.image
 # gets etcd-steward:local as its backup-restore sidecar.
+#
+# The image is expected in the local KinD registry at localhost:5001.
+# Build and push it with: make deploy-steward-dev STEWARD_DIR=<path>
 imageVectorOverwrite: |
   images:
   - name: etcd-backup-restore
-    repository: etcd-steward
+    repository: localhost:5001/etcd-steward
     tag: "local"
