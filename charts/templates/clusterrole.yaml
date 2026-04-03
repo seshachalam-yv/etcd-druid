@@ -100,9 +100,12 @@ rules:
   verbs:
   - get
   - list
+  - create
   - patch
   - update
   - watch
+  - delete
+  - deletecollection
 - apiGroups:
   - druid.gardener.cloud
   resources:
