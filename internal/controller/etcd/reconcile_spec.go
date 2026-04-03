@@ -201,6 +201,7 @@ func (r *Reconciler) getOrderedOperatorsForSync(etcdObjMeta metav1.ObjectMeta) [
 			component.PodDisruptionBudgetKind,
 			component.ClientServiceKind,
 			component.PeerServiceKind,
+			component.EtcdMemberKind,
 		}
 	}
 
@@ -226,5 +227,6 @@ func (r *Reconciler) getOperatorsForCleanup(etcdObjMeta metav1.ObjectMeta) []com
 		component.PodDisruptionBudgetKind,
 		component.ClientServiceKind,
 		component.PeerServiceKind,
+		component.EtcdMemberKind,
 	}
 }

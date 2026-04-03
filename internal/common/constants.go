@@ -108,6 +108,8 @@ const (
 	ComponentNameRoleBinding = "etcd-role-binding"
 	// ComponentNameServiceAccount is the component name for service account resource.
 	ComponentNameServiceAccount = "etcd-service-account"
+	// ComponentNameEtcdMember is the component name for etcd member resource.
+	ComponentNameEtcdMember = "etcd-member"
 	// ComponentNameStatefulSet is the component name for statefulset resource.
 	ComponentNameStatefulSet = "etcd-statefulset"
 	// ComponentNameSnapshotCompactionJob is the component name for snapshot compaction job resource.

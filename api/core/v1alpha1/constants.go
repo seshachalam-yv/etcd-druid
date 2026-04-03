@@ -21,6 +21,8 @@ const (
 	LabelPartOfKey = "app.kubernetes.io/part-of"
 	// LabelComponentKey is a key for a label that sets the component type on resources provisioned for an etcd cluster.
 	LabelComponentKey = "app.kubernetes.io/component"
+	// LabelOwnedByKey is a label key used on EtcdMember resources to identify the parent Etcd resource.
+	LabelOwnedByKey = "gardener.cloud/owned-by"
 )
 
 // Annotation keys that can be placed on an Etcd custom resource.
@@ -42,6 +44,11 @@ const (
 	// DisableEtcdRuntimeComponentCreationAnnotation is an annotation set by an operator to disable the creation and management of
 	// runtime components of the etcd cluster such as pods, PVCs, leases, RBAC resources, PDBs, services, etc.
 	DisableEtcdRuntimeComponentCreationAnnotation = "druid.gardener.cloud/disable-etcd-runtime-component-creation"
+	// CreateAsLearnerAnnotation is an annotation set by etcd-druid on an EtcdMember resource
+	// to indicate that this member should join the etcd cluster as a learner during scale-up.
+	// etcd-steward reads this annotation during bootstrap and removes it after the member is
+	// promoted to a voting member.
+	CreateAsLearnerAnnotation = "druid.gardener.cloud/create-as-learner"
 )
 
 // Compaction Job/Pod reasons that are used to set the reason for a pod condition in the status of an Etcd resource.

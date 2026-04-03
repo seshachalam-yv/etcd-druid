@@ -12,6 +12,7 @@ import (
 	"github.com/gardener/etcd-druid/internal/component"
 	"github.com/gardener/etcd-druid/internal/component/clientservice"
 	"github.com/gardener/etcd-druid/internal/component/configmap"
+	"github.com/gardener/etcd-druid/internal/component/etcdmember"
 	"github.com/gardener/etcd-druid/internal/component/memberlease"
 	"github.com/gardener/etcd-druid/internal/component/peerservice"
 	"github.com/gardener/etcd-druid/internal/component/poddistruptionbudget"
@@ -157,6 +158,7 @@ func createAndInitializeOperatorRegistry(client client.Client, config druidconfi
 	reg.Register(component.PodDisruptionBudgetKind, poddistruptionbudget.New(client))
 	reg.Register(component.ClientServiceKind, clientservice.New(client))
 	reg.Register(component.PeerServiceKind, peerservice.New(client))
+	reg.Register(component.EtcdMemberKind, etcdmember.New(client))
 	reg.Register(component.ConfigMapKind, configmap.New(client))
 	reg.Register(component.StatefulSetKind, statefulset.New(client, imageVector))
 	return reg
