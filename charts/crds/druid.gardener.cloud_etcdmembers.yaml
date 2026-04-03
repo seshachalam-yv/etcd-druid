@@ -1,0 +1,164 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: etcdmembers.druid.gardener.cloud
+spec:
+  group: druid.gardener.cloud
+  names:
+    kind: EtcdMember
+    listKind: EtcdMemberList
+    plural: etcdmembers
+    singular: etcdmember
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: EtcdMember is the Schema for the etcdmembers API. Each EtcdMember
+          resource represents one member of an etcd cluster managed by etcd-druid.
+          etcd-druid creates and deletes EtcdMember resources as part of Etcd cluster
+          reconciliation. The status of an EtcdMember is updated exclusively by etcd-steward
+          (the per-member lifecycle agent).
+        properties:
+          apiVersion:
+            description: APIVersion defines the versioned schema of this representation
+              of an object.
+            type: string
+          kind:
+            description: Kind is a string value representing the REST resource this
+              object represents.
+            type: string
+          metadata:
+            type: object
+          status:
+            description: EtcdMemberResourceStatus defines the observed state of an EtcdMember.
+            properties:
+              clusterID:
+                description: ClusterID is the etcd cluster ID. All healthy members of
+                  the same cluster must share the same cluster ID.
+                type: string
+              dbSize:
+                anyOf:
+                - type: integer
+                - type: string
+                description: DBSize is the total storage space used by the etcd DB on
+                  this member.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              dbSizeInUse:
+                anyOf:
+                - type: integer
+                - type: string
+                description: DBSizeInUse is the logical storage space actively used by
+                  the etcd DB (excludes free pages).
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              id:
+                description: ID is the etcd member ID.
+                type: string
+              lastRestoration:
+                description: LastRestoration captures information about the most recent
+                  restoration operation.
+                properties:
+                  endTime:
+                    description: EndTime is the end time of the restoration.
+                    format: date-time
+                    type: string
+                  message:
+                    description: Message is an optional human-readable message.
+                    type: string
+                  startTime:
+                    description: StartTime is the start time of the restoration.
+                    format: date-time
+                    type: string
+                  status:
+                    description: Status is the status of the restoration.
+                    type: string
+                  type:
+                    description: Type is the type of restoration (FromSnapshot or FromLeader).
+                    type: string
+                required:
+                - startTime
+                - status
+                - type
+                type: object
+              peerTLSEnabled:
+                description: PeerTLSEnabled indicates whether TLS is enabled for peer
+                  communication for this member.
+                type: boolean
+              transitions:
+                description: Transitions is the list of state transitions for this member,
+                  in chronological order. etcd-steward keeps at most 100 entries; oldest
+                  are pruned automatically.
+                items:
+                  description: EtcdMemberTransition captures a single state transition
+                    of an EtcdMember.
+                  properties:
+                    message:
+                      description: Message is an optional human-readable message describing
+                        the transition.
+                      type: string
+                    reason:
+                      description: Reason is the reason code for the transition.
+                      type: string
+                    state:
+                      description: State is the top-level state the member transitioned
+                        to.
+                      type: string
+                    subState:
+                      description: SubState is the sub-state the member transitioned to.
+                      type: string
+                    transitionTime:
+                      description: TransitionTime is the time the transition occurred.
+                      format: date-time
+                      type: string
+                  required:
+                  - reason
+                  - state
+                  - transitionTime
+                  type: object
+                maxItems: 100
+                type: array
+              volumeMismatches:
+                description: VolumeMismatches captures volume mismatch events detected
+                  for this member.
+                items:
+                  description: EtcdMemberVolumeMismatch captures information about a
+                    volume mismatch event detected by etcd-steward.
+                  properties:
+                    fixedAt:
+                      description: FixedAt is the time at which the correct volume was
+                        mounted.
+                      format: date-time
+                      type: string
+                    identifiedAt:
+                      description: IdentifiedAt is the time at which the wrong volume
+                        mount was identified.
+                      format: date-time
+                      type: string
+                    numRestarts:
+                      description: NumRestarts is the number of pod restarts attempted
+                        while this volume was mounted.
+                      format: int32
+                      type: integer
+                    volumeID:
+                      description: VolumeID is the ID of the wrong volume that was mounted.
+                      type: string
+                  required:
+                  - identifiedAt
+                  - volumeID
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

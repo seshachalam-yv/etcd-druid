@@ -23,6 +23,7 @@ func TestGetAll(t *testing.T) {
 				ResourceNameEtcd:                etcdCRD,
 				ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
 				ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
+				ResourceNameEtcdMember:          etcdMemberCRD,
 			},
 		},
 		{
@@ -32,6 +33,7 @@ func TestGetAll(t *testing.T) {
 				ResourceNameEtcd:                etcdCRD,
 				ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
 				ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
+				ResourceNameEtcdMember:          etcdMemberCRD,
 			},
 		},
 		{
@@ -41,6 +43,7 @@ func TestGetAll(t *testing.T) {
 				ResourceNameEtcd:                etcdCRDWithoutCEL,
 				ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
 				ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
+				ResourceNameEtcdMember:          etcdMemberCRD,
 			},
 		},
 		{
@@ -50,6 +53,7 @@ func TestGetAll(t *testing.T) {
 				ResourceNameEtcd:                etcdCRDWithoutCEL,
 				ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
 				ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
+				ResourceNameEtcdMember:          etcdMemberCRD,
 			},
 		},
 		{
@@ -59,6 +63,7 @@ func TestGetAll(t *testing.T) {
 				ResourceNameEtcd:                etcdCRD,
 				ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
 				ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
+				ResourceNameEtcdMember:          etcdMemberCRD,
 			},
 		},
 		{
@@ -68,6 +73,7 @@ func TestGetAll(t *testing.T) {
 				ResourceNameEtcd:                etcdCRD,
 				ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
 				ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
+				ResourceNameEtcdMember:          etcdMemberCRD,
 			},
 		},
 	}

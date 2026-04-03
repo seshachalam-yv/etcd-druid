@@ -19,6 +19,8 @@ var (
 	etcdCopyBackupsTaskCRD string
 	//go:embed druid.gardener.cloud_etcdopstasks.yaml
 	etcdOpsTaskCRD string
+	//go:embed druid.gardener.cloud_etcdmembers.yaml
+	etcdMemberCRD string
 )
 
 const (
@@ -28,6 +30,8 @@ const (
 	ResourceNameEtcdCopyBackupsTask = "etcdcopybackupstasks.druid.gardener.cloud"
 	// ResourceNameEtcdOpsTask is the name of the etcd-ops-task CRD.
 	ResourceNameEtcdOpsTask = "etcdopstasks.druid.gardener.cloud"
+	// ResourceNameEtcdMember is the name of the EtcdMember CRD.
+	ResourceNameEtcdMember = "etcdmembers.druid.gardener.cloud"
 )
 
 // GetAll returns all CRDs for the given k8s version.
@@ -51,6 +55,7 @@ func GetAll(k8sVersion string) (map[string]string, error) {
 		ResourceNameEtcd:                selectedEtcdCRD,
 		ResourceNameEtcdCopyBackupsTask: etcdCopyBackupsTaskCRD,
 		ResourceNameEtcdOpsTask:         etcdOpsTaskCRD,
+		ResourceNameEtcdMember:          etcdMemberCRD,
 	}, nil
 }
 
