@@ -11,7 +11,18 @@ resources:
     cpu: 50m
     memory: 128Mi
 
-nodeSelector: { }
+# imageVectorOverwrite is an optional YAML string containing an images list that overrides
+# the image vector embedded in the etcd-druid binary.  When non-empty it is mounted as the
+# IMAGEVECTOR_OVERWRITE environment variable so every Etcd CR that does not set
+# spec.backup.image will get the overridden backup-restore image.
+# Example (for local etcd-steward development):
+#   imageVectorOverwrite: |
+#     images:
+#     - name: etcd-backup-restore
+#       repository: etcd-steward
+#       tag: "local"
+imageVectorOverwrite: ""
+
 
 affinity: { }
 
@@ -84,9 +95,11 @@ operatorConfig:
       enabled: false
       exemptServiceAccounts:
         - system:serviceaccount:kube-system:generic-garbage-collector
-  featureGates: { 
+  featureGates:
     UpgradeEtcdVersion: false
-  }
+    # UseEtcdWrapper enables the etcd-wrapper / etcd-steward sidecar in place of the
+    # legacy etcd-backup-restore sidecar. GA-locked to true once enabled; cannot be disabled.
+    UseEtcdWrapper: true
   logConfiguration:
     logLevel: info
     logFormat: json

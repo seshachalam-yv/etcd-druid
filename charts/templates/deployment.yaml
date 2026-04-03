@@ -96,6 +96,12 @@ spec:
         {{- end }}
         {{- end }}
         {{- end }}
+          env:
+        {{- if .Values.imageVectorOverwrite }}
+            - name: IMAGEVECTOR_OVERWRITE
+              value: |
+{{ .Values.imageVectorOverwrite | indent 16 }}
+        {{- end }}
           volumeMounts:
         {{- if eq $etcdComponentProtectionWebhookEnabled "true" }}
             - mountPath: /etc/webhook-server-tls

@@ -58,6 +58,19 @@ profiles:
         path: /deploy/helm/release/0/setValues/operatorConfig
         value:
           leaderElection.enabled: false
+  # Profile for local etcd-steward development.
+  # Sets imageVectorOverwrite so every Etcd CR gets etcd-steward:local as its backup-restore sidecar.
+  # Usage: skaffold run -p etcd-steward-dev
+  # Pre-requisite: etcd-steward:local must be loaded into the KinD cluster:
+  #   GOOS=linux GOARCH=arm64 go build -o /tmp/steward-build/bin/etcd-steward ./cmd/etcd-steward/
+  #   docker build --platform linux/arm64 -t etcd-steward:local /tmp/steward-build/
+  #   kind load docker-image etcd-steward:local --name etcd-druid-e2e
+  - name: etcd-steward-dev
+    patches:
+      - op: add
+        path: /deploy/helm/releases/0/valuesFiles
+        value:
+          - charts/values-steward-dev.yaml
   - name: e2e-test
     activation:
       - env: DRUID_E2E_TEST=true

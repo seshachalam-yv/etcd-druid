@@ -1,0 +1,9 @@
+# Values for local etcd-steward development.
+# Applied by the etcd-steward-dev skaffold profile on top of values.yaml.
+# Overrides the image vector so every Etcd CR that does not set spec.backup.image
+# gets etcd-steward:local as its backup-restore sidecar.
+imageVectorOverwrite: |
+  images:
+  - name: etcd-backup-restore
+    repository: etcd-steward
+    tag: "local"
