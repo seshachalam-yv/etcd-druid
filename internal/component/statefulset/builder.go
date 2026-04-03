@@ -6,7 +6,9 @@ package statefulset
 
 import (
 	"fmt"
+	"strings"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 	"github.com/gardener/etcd-druid/internal/component"
@@ -422,6 +424,117 @@ func (b *stsBuilder) getBackupRestoreContainer() (corev1.Container, error) {
 }
 
 func (b *stsBuilder) getBackupRestoreContainerCommandArgs() []string {
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		return b.getStewardContainerCommandArgs()
+	}
+	return b.getBackupRestoreContainerCommandArgsLegacy()
+}
+
+// getStewardContainerCommandArgs returns the CLI args for the etcd-steward sidecar.
+// Only flags that etcd-steward actually uses are passed; no-op compat flags are omitted.
+func (b *stsBuilder) getStewardContainerCommandArgs() []string {
+	commandArgs := []string{"server"}
+	commandArgs = append(commandArgs, fmt.Sprintf("--server-port=%d", b.backupPort))
+
+	// Backup store related command line args
+	// -----------------------------------------------------------------------------------------------------------------
+	if b.etcd.IsBackupStoreEnabled() {
+		commandArgs = append(commandArgs, b.getBackupStoreCommandArgs()...)
+	}
+
+	// Defragmentation — etcd-steward uses --defrag-schedule (not --defragmentation-schedule)
+	// -----------------------------------------------------------------------------------------------------------------
+	if b.etcd.Spec.Etcd.DefragmentationSchedule != nil {
+		commandArgs = append(commandArgs, fmt.Sprintf("--defrag-schedule=%s", *b.etcd.Spec.Etcd.DefragmentationSchedule))
+	}
+	etcdDefragTimeout := defaultEtcdDefragTimeout
+	if b.etcd.Spec.Etcd.EtcdDefragTimeout != nil {
+		etcdDefragTimeout = b.etcd.Spec.Etcd.EtcdDefragTimeout.Duration.String()
+	}
+	commandArgs = append(commandArgs, "--etcd-defrag-timeout="+etcdDefragTimeout)
+
+	// Compaction
+	// -----------------------------------------------------------------------------------------------------------------
+	compactionMode := defaultAutoCompactionMode
+	if b.etcd.Spec.Common.AutoCompactionMode != nil {
+		compactionMode = string(*b.etcd.Spec.Common.AutoCompactionMode)
+	}
+	commandArgs = append(commandArgs, "--auto-compaction-mode="+compactionMode)
+
+	compactionRetention := defaultAutoCompactionRetention
+	if b.etcd.Spec.Common.AutoCompactionRetention != nil {
+		compactionRetention = *b.etcd.Spec.Common.AutoCompactionRetention
+	}
+	commandArgs = append(commandArgs, fmt.Sprintf("--auto-compaction-retention=%s", compactionRetention))
+
+	// Client TLS — etcd-steward does not use --insecure-* or --service-endpoints
+	// -----------------------------------------------------------------------------------------------------------------
+	if b.etcd.Spec.Etcd.ClientUrlTLS != nil {
+		dataKey := ptr.Deref(b.etcd.Spec.Etcd.ClientUrlTLS.TLSCASecretRef.DataKey, "ca.crt")
+		commandArgs = append(commandArgs, fmt.Sprintf("--cacert=%s/%s", common.VolumeMountPathEtcdCA, dataKey))
+		commandArgs = append(commandArgs, fmt.Sprintf("--cert=%s/tls.crt", common.VolumeMountPathEtcdClientTLS))
+		commandArgs = append(commandArgs, fmt.Sprintf("--key=%s/tls.key", common.VolumeMountPathEtcdClientTLS))
+		commandArgs = append(commandArgs, fmt.Sprintf("--endpoints=https://%s-local:%d", b.etcd.Name, b.clientPort))
+	} else {
+		commandArgs = append(commandArgs, fmt.Sprintf("--endpoints=http://%s-local:%d", b.etcd.Name, b.clientPort))
+	}
+	if b.etcd.Spec.Backup.TLS != nil {
+		commandArgs = append(commandArgs, fmt.Sprintf("--server-cert=%s/tls.crt", common.VolumeMountPathBackupRestoreServerTLS))
+		commandArgs = append(commandArgs, fmt.Sprintf("--server-key=%s/tls.key", common.VolumeMountPathBackupRestoreServerTLS))
+	}
+
+	// Cluster bootstrap args — etcd-steward manages etcd startup directly
+	// -----------------------------------------------------------------------------------------------------------------
+	peerScheme := "http"
+	if b.etcd.Spec.Etcd.PeerUrlTLS != nil {
+		peerScheme = "https"
+	}
+	peerSvcName := druidv1alpha1.GetPeerServiceName(b.etcd.ObjectMeta)
+	domainName := fmt.Sprintf("%s.%s.svc", peerSvcName, b.etcd.Namespace)
+	// --initial-cluster: name=scheme://pod.peer-svc.ns.svc:peerPort,...
+	initialClusterParts := make([]string, 0, int(b.etcd.Spec.Replicas))
+	for i := range int(b.etcd.Spec.Replicas) {
+		podName := druidv1alpha1.GetOrdinalPodName(b.etcd.ObjectMeta, i)
+		initialClusterParts = append(initialClusterParts, fmt.Sprintf("%s=%s://%s.%s:%d", podName, peerScheme, podName, domainName, b.serverPort))
+	}
+	commandArgs = append(commandArgs, fmt.Sprintf("--initial-cluster=%s", strings.Join(initialClusterParts, ",")))
+
+	// --initial-advertise-peer-urls: this is pod-specific at runtime — etcd-steward resolves
+	// it from POD_NAME env var (injected via downward API). Pass a template pattern so the
+	// binary can substitute or we pass the full list and it picks its own entry.
+	// etcd-steward reads POD_NAME from env; it constructs its own advertise-peer-url.
+	// We still pass listen-peer-urls and listen-client-urls as static values.
+	commandArgs = append(commandArgs, fmt.Sprintf("--listen-peer-urls=%s://0.0.0.0:%d", peerScheme, b.serverPort))
+	if b.etcd.Spec.Etcd.ClientUrlTLS != nil {
+		commandArgs = append(commandArgs, fmt.Sprintf("--listen-client-urls=https://0.0.0.0:%d", b.clientPort))
+	} else {
+		commandArgs = append(commandArgs, fmt.Sprintf("--listen-client-urls=http://0.0.0.0:%d,http://127.0.0.1:%d", b.clientPort, b.clientPort))
+	}
+
+	// Misc
+	// -----------------------------------------------------------------------------------------------------------------
+	commandArgs = append(commandArgs, fmt.Sprintf("--data-dir=%s/new.etcd", common.VolumeMountPathEtcdData))
+	commandArgs = append(commandArgs, fmt.Sprintf("--etcd-connection-timeout=%s", defaultEtcdConnectionTimeout))
+	if druidv1alpha1.IsEtcdRuntimeComponentCreationEnabled(b.etcd.ObjectMeta) {
+		commandArgs = append(commandArgs, "--enable-member-lease-renewal=true")
+		heartbeatDuration := defaultHeartbeatDuration
+		if b.etcd.Spec.Etcd.HeartbeatDuration != nil {
+			heartbeatDuration = b.etcd.Spec.Etcd.HeartbeatDuration.Duration.String()
+		}
+		commandArgs = append(commandArgs, fmt.Sprintf("--k8s-heartbeat-duration=%s", heartbeatDuration))
+	}
+
+	if b.etcd.Spec.Backup.LeaderElection != nil {
+		if b.etcd.Spec.Backup.LeaderElection.ReelectionPeriod != nil {
+			commandArgs = append(commandArgs, fmt.Sprintf("--reelection-period=%s", b.etcd.Spec.Backup.LeaderElection.ReelectionPeriod.Duration.String()))
+		}
+	}
+
+	return commandArgs
+}
+
+// getBackupRestoreContainerCommandArgsLegacy returns the CLI args for the etcd-backup-restore sidecar.
+func (b *stsBuilder) getBackupRestoreContainerCommandArgsLegacy() []string {
 	commandArgs := []string{"server"}
 	commandArgs = append(commandArgs, fmt.Sprintf("--server-port=%d", b.backupPort))
 
