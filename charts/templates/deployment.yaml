@@ -99,8 +99,7 @@ spec:
           env:
         {{- if .Values.imageVectorOverwrite }}
             - name: IMAGEVECTOR_OVERWRITE
-              value: |
-{{ .Values.imageVectorOverwrite | indent 16 }}
+              value: /imagevector-overwrite/images_overwrite.yaml
         {{- end }}
           volumeMounts:
         {{- if eq $etcdComponentProtectionWebhookEnabled "true" }}
@@ -111,6 +110,11 @@ spec:
         {{- if .Values.enabledOperatorConfig }}
             - mountPath: /etc/etcd-druid/config
               name: operator-config
+              readOnly: true
+        {{- end }}
+        {{- if .Values.imageVectorOverwrite }}
+            - mountPath: /imagevector-overwrite
+              name: imagevector-overwrite
               readOnly: true
         {{- end }}
           resources:
@@ -144,4 +148,9 @@ spec:
         - name: operator-config
           configMap:
             name: etcd-druid-operator-config
+      {{- end }}
+      {{- if .Values.imageVectorOverwrite }}
+        - name: imagevector-overwrite
+          configMap:
+            name: etcd-druid-imagevector-overwrite
       {{- end }}
