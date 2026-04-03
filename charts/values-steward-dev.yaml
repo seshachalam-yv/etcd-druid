@@ -7,7 +7,7 @@
 # Build and push it with: make deploy-steward-dev STEWARD_DIR=<path>
 imageVectorOverwrite: |
   images:
-  - name: etcd-backup-restore
+  - name: etcd-steward
     repository: localhost:5001/etcd-steward
     tag: "local"
 
