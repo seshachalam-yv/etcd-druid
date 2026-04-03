@@ -32,6 +32,9 @@ const (
 	ImageKeyEtcdWrapperNext = "etcd-wrapper-next"
 	// ImageKeyEtcdBackupRestoreNext is the key for the next etcd-backup-restore image (etcd 3.5) in the image vector.
 	ImageKeyEtcdBackupRestoreNext = "etcd-backup-restore-next"
+	// ImageKeyEtcdSteward is the key for the etcd-steward image in the image vector.
+	// Used when the UseEtcdSteward feature gate is enabled.
+	ImageKeyEtcdSteward = "etcd-steward"
 )
 
 // Constants for container names

@@ -41,6 +41,11 @@ func CreateImageVector(withEtcdWrapperImage, withBackupRestoreImage bool) imagev
 				Repository: ptr.To(TestImageRepo),
 				Tag:        ptr.To(ETCDBRNextImageTag),
 			},
+			&imagevector.ImageSource{
+				Name:       common.ImageKeyEtcdSteward,
+				Repository: ptr.To(TestImageRepo),
+				Tag:        ptr.To(ETCDStewardImageTag),
+			},
 		)
 	}
 	imageSources = append(imageSources, &imagevector.ImageSource{

@@ -32,6 +32,8 @@ func TestGetEtcdImages(t *testing.T) {
 		{"etcd spec and image vector have no images returns error", testWithSpecAndIVNotHavingAnyImages},
 		{"featuregate UpgradeEtcdVersion enabled returns v3.5 images from image vector", testWithUpgradeEtcdVersionFeatureGateEnabled},
 		{"featuregate UpgradeEtcdVersion disabled returns older images from image vector", testWithUpgradeEtcdVersionFeatureGateDisabled},
+		{"featuregate UseEtcdSteward enabled returns etcd-steward image from image vector", testWithUseEtcdStewardFeatureGateEnabled},
+		{"featuregate UseEtcdSteward disabled returns etcd-backup-restore image from image vector", testWithUseEtcdStewardFeatureGateDisabled},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -164,6 +166,47 @@ func testWithUpgradeEtcdVersionFeatureGateDisabled(g *WithT, etcd *druidv1alpha1
 	g.Expect(err).To(BeNil())
 	g.Expect(etcdImage).To(Equal(expectedEtcdImage.String()))
 	g.Expect(etcdBackupRestoreImage).ToNot(BeNil())
+	expectedBRImage, err := iv.FindImage(common.ImageKeyEtcdBackupRestore)
+	g.Expect(err).To(BeNil())
+	g.Expect(etcdBackupRestoreImage).To(Equal(expectedBRImage.String()))
+}
+
+func testWithUseEtcdStewardFeatureGateEnabled(g *WithT, etcd *druidv1alpha1.Etcd) {
+	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
+	)
+	g.Expect(err).ToNot(HaveOccurred())
+	defer func() {
+		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+			map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+		)
+	}()
+
+	etcd.Spec.Etcd.Image = nil
+	etcd.Spec.Backup.Image = nil
+
+	iv := testutils.CreateImageVector(true, true)
+	_, etcdBackupRestoreImage, _, err := utils.GetEtcdImages(etcd, iv)
+	g.Expect(err).To(BeNil())
+	g.Expect(etcdBackupRestoreImage).ToNot(BeEmpty())
+	expectedStewardImage, err := iv.FindImage(common.ImageKeyEtcdSteward)
+	g.Expect(err).To(BeNil())
+	g.Expect(etcdBackupRestoreImage).To(Equal(expectedStewardImage.String()))
+}
+
+func testWithUseEtcdStewardFeatureGateDisabled(g *WithT, etcd *druidv1alpha1.Etcd) {
+	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+	)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	etcd.Spec.Etcd.Image = nil
+	etcd.Spec.Backup.Image = nil
+
+	iv := testutils.CreateImageVector(true, true)
+	_, etcdBackupRestoreImage, _, err := utils.GetEtcdImages(etcd, iv)
+	g.Expect(err).To(BeNil())
+	g.Expect(etcdBackupRestoreImage).ToNot(BeEmpty())
 	expectedBRImage, err := iv.FindImage(common.ImageKeyEtcdBackupRestore)
 	g.Expect(err).To(BeNil())
 	g.Expect(etcdBackupRestoreImage).To(Equal(expectedBRImage.String()))

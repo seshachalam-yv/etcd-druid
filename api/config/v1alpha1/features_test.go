@@ -58,6 +58,24 @@ func TestDefaultFeatureGate(t *testing.T) {
 				UpgradeEtcdVersion: false,
 			},
 		},
+		{
+			name: "UseEtcdSteward can be enabled (alpha feature)",
+			enabledFeatures: map[string]bool{
+				UseEtcdSteward: true,
+			},
+			expectedEnabledFeatures: map[string]bool{
+				UseEtcdSteward: true,
+			},
+		},
+		{
+			name: "UseEtcdSteward can be disabled (alpha feature)",
+			enabledFeatures: map[string]bool{
+				UseEtcdSteward: false,
+			},
+			expectedEnabledFeatures: map[string]bool{
+				UseEtcdSteward: false,
+			},
+		},
 	}
 
 	for _, test := range tests {

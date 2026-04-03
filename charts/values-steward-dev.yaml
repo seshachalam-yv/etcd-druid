@@ -10,3 +10,14 @@ imageVectorOverwrite: |
   - name: etcd-backup-restore
     repository: localhost:5001/etcd-steward
     tag: "local"
+
+# Enable the UseEtcdSteward feature gate so etcd-druid selects etcd-steward
+# as the backup-restore sidecar image automatically.
+# Enable auto-reconcile so spec changes take effect without the
+# gardener.cloud/operation=reconcile annotation (no manual patching).
+operatorConfig:
+  featureGates:
+    UseEtcdSteward: true
+  controllers:
+    etcd:
+      enableEtcdSpecAutoReconcile: true

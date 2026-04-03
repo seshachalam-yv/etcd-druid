@@ -33,6 +33,7 @@ STEWARD_DIR="${1:-}"
 IMAGE_TAG="${2:-local}"
 LOCAL_REGISTRY="${LOCAL_REGISTRY:-localhost:5001}"
 KIND_CLUSTER="${KIND_CLUSTER:-etcd-druid-e2e}"
+HOST_ARCH="${HOST_ARCH:-$(go env GOARCH)}"
 BUILD_DIR="$(mktemp -d)"
 
 trap 'rm -rf "${BUILD_DIR}"' EXIT
@@ -67,11 +68,11 @@ function check_prereqs() {
 }
 
 function build_binary() {
-  echo "Building etcd-steward binary for linux/arm64..."
+  echo "Building etcd-steward binary for linux/${HOST_ARCH}..."
   mkdir -p "${BUILD_DIR}/bin"
   (
     cd "${STEWARD_DIR}"
-    GOOS=linux GOARCH=arm64 go build -o "${BUILD_DIR}/bin/etcd-steward" ./cmd/etcd-steward/
+    GOOS=linux GOARCH="${HOST_ARCH}" go build -o "${BUILD_DIR}/bin/etcd-steward" ./cmd/etcd-steward/
   )
   echo "Binary built: ${BUILD_DIR}/bin/etcd-steward"
 }
@@ -85,7 +86,7 @@ WORKDIR /
 COPY bin/etcd-steward /etcd-steward
 ENTRYPOINT ["/etcd-steward"]
 EOF
-  docker build --platform linux/arm64 -t "${full_image}" "${BUILD_DIR}"
+  docker build --platform "linux/${HOST_ARCH}" -t "${full_image}" "${BUILD_DIR}"
   echo "Pushing ${full_image} to local registry..."
   docker push "${full_image}"
   echo "Image available at ${full_image}"

@@ -17,6 +17,11 @@ const (
 
 	// UpgradeEtcdVersion is the name of the feature which enables upgrade of etcd version to v3.5.
 	UpgradeEtcdVersion = "UpgradeEtcdVersion"
+
+	// UseEtcdSteward is the name of the feature which enables the etcd-steward sidecar
+	// as a replacement for etcd-backup-restore in the etcd StatefulSet.
+	// This is an alpha feature and is disabled by default.
+	UseEtcdSteward = "UseEtcdSteward"
 )
 
 // maturityLevelSpec is the specification of maturity level for a feature.
@@ -85,6 +90,7 @@ var DefaultFeatureGates = newFeatureGate()
 func init() {
 	DefaultFeatureGates.knownFeatures[UseEtcdWrapper] = maturityLevelSpecGA
 	DefaultFeatureGates.knownFeatures[UpgradeEtcdVersion] = maturityLevelSpecAlpha
+	DefaultFeatureGates.knownFeatures[UseEtcdSteward] = maturityLevelSpecAlpha
 }
 
 // IsEnabled checks if a feature is enabled.

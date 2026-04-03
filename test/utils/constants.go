@@ -22,6 +22,8 @@ const (
 	ETCDBRImageTag = "backup-restore-test-tag"
 	// ETCDBRNextImageTag is the ImageSource tag for the next etcd-backup-restore image (etcd 3.5).
 	ETCDBRNextImageTag = "backup-restore-next-test-tag"
+	// ETCDStewardImageTag is the ImageSource tag for the etcd-steward image.
+	ETCDStewardImageTag = "etcd-steward-test-tag"
 	// InitContainerTag is the ImageSource tag for the init container image.
 	InitContainerTag = "init-container-test-tag"
 )
