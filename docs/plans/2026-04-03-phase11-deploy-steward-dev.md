@@ -39,19 +39,19 @@ Result: one command does everything.
 
 ## Tasks
 
-- [ ] **Task 1**: Update `build-steward.sh` to push to local registry instead of `kind load`  
+- [x] **Task 1**: Update `build-steward.sh` to push to local registry instead of `kind load`  
   **Acceptance:** builds binary, builds image, pushes to `localhost:5001/etcd-steward:local`; no `kind load`  
   **Files:** `hack/build-steward.sh`
 
-- [ ] **Task 2**: Update `values-steward-dev.yaml` to use registry image URL  
+- [x] **Task 2**: Update `values-steward-dev.yaml` to use registry image URL  
   **Acceptance:** `imageVectorOverwrite.images[0].repository = "localhost:5001/etcd-steward"`  
   **Files:** `charts/values-steward-dev.yaml`
 
-- [ ] **Task 3**: Add `make deploy-steward-dev` Makefile target  
+- [x] **Task 3**: Add `make deploy-steward-dev` Makefile target  
   **Acceptance:** `make deploy-steward-dev STEWARD_DIR=<path>` runs T1+T2 in sequence; no other manual steps  
   **Files:** `Makefile`
 
-- [ ] **Task 4**: E2E validation — fresh cluster, one command  
+- [x] **Task 4**: E2E validation — fresh cluster, one command  
   **Acceptance:** recreate cluster, `make deploy-steward-dev STEWARD_DIR=<path>`, `kubectl apply etcd.yaml` → `2/2 Running`, `BackupReady=True`. Zero `kubectl annotate`, `kind load`, `docker exec`.
 
 ## Testing Strategy
