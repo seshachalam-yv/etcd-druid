@@ -21,6 +21,14 @@ type EtcdCopyBackupsTaskListerExpansion interface{}
 // EtcdCopyBackupsTaskNamespaceLister.
 type EtcdCopyBackupsTaskNamespaceListerExpansion interface{}
 
+// EtcdMemberListerExpansion allows custom methods to be added to
+// EtcdMemberLister.
+type EtcdMemberListerExpansion interface{}
+
+// EtcdMemberNamespaceListerExpansion allows custom methods to be added to
+// EtcdMemberNamespaceLister.
+type EtcdMemberNamespaceListerExpansion interface{}
+
 // EtcdOpsTaskListerExpansion allows custom methods to be added to
 // EtcdOpsTaskLister.
 type EtcdOpsTaskListerExpansion interface{}

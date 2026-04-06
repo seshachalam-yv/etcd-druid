@@ -436,6 +436,7 @@ Package v1alpha1 contains API Schema definitions for the druid v1alpha1 API grou
 ### Resource Types
 - [Etcd](#etcd)
 - [EtcdCopyBackupsTask](#etcdcopybackupstask)
+- [EtcdMember](#etcdmember)
 - [EtcdOpsTask](#etcdopstask)
 
 
@@ -737,6 +738,27 @@ _Appears in:_
 | `lastError` _string_ | LastError represents the last occurred error. |  |  |
 
 
+#### EtcdMember
+
+
+
+EtcdMember is the Schema for the etcdmembers API.
+Each EtcdMember resource represents one member of an etcd cluster managed by etcd-druid.
+etcd-druid creates and deletes EtcdMember resources as part of Etcd cluster reconciliation.
+The status of an EtcdMember is updated exclusively by etcd-steward (the per-member lifecycle agent).
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `druid.gardener.cloud/v1alpha1` | | |
+| `kind` _string_ | `EtcdMember` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `status` _[EtcdMemberResourceStatus](#etcdmemberresourcestatus)_ |  |  |  |
+
+
 #### EtcdMemberConditionStatus
 
 _Underlying type:_ _string_
@@ -753,6 +775,103 @@ _Appears in:_
 | `Ready` | EtcdMemberStatusReady indicates that the etcd member is ready.<br /> |
 | `NotReady` | EtcdMemberStatusNotReady indicates that the etcd member is not ready.<br /> |
 | `Unknown` | EtcdMemberStatusUnknown indicates that the status of the etcd member is unknown.<br /> |
+
+
+#### EtcdMemberResourceStatus
+
+
+
+EtcdMemberResourceStatus defines the observed state of an EtcdMember.
+
+
+
+_Appears in:_
+- [EtcdMember](#etcdmember)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `id` _string_ | ID is the etcd member ID. |  |  |
+| `clusterID` _string_ | ClusterID is the etcd cluster ID. |  |  |
+| `peerTLSEnabled` _boolean_ | PeerTLSEnabled indicates whether TLS is enabled for peer communication for this member. |  |  |
+| `dbSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | DBSize is the total storage space used by the etcd DB on this member. |  |  |
+| `dbSizeInUse` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | DBSizeInUse is the logical storage space actively used by the etcd DB (excludes free pages). |  |  |
+| `transitions` _[EtcdMemberTransition](#etcdmembertransition) array_ | Transitions is the list of state transitions for this member, in chronological order. |  | MaxItems: 100 <br /> |
+| `volumeMismatches` _[EtcdMemberVolumeMismatch](#etcdmembervolumemismatch) array_ | VolumeMismatches captures volume mismatch events detected for this member. |  |  |
+| `lastRestoration` _[EtcdMemberRestoration](#etcdmemberrestoration)_ | LastRestoration captures information about the most recent restoration operation. |  |  |
+
+
+#### EtcdMemberRestoration
+
+
+
+EtcdMemberRestoration captures information about the last restoration operation.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[EtcdMemberRestorationType](#etcdmemberrestorationtype)_ | Type is the type of restoration (FromSnapshot or FromLeader). |  |  |
+| `status` _[EtcdMemberRestorationStatus](#etcdmemberrestorationstatus)_ | Status is the status of the restoration. |  |  |
+| `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | StartTime is the start time of the restoration. |  |  |
+| `endTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | EndTime is the end time of the restoration. |  |  |
+| `message` _string_ | Message is an optional human-readable message. |  |  |
+
+
+#### EtcdMemberRestorationStatus
+
+_Underlying type:_ _string_
+
+EtcdMemberRestorationStatus is the status of the last restoration operation.
+
+
+
+_Appears in:_
+- [EtcdMemberRestoration](#etcdmemberrestoration)
+
+| Field | Description |
+| --- | --- |
+| `InProgress` | EtcdMemberRestorationStatusInProgress indicates restoration is in progress.<br /> |
+| `Succeeded` | EtcdMemberRestorationStatusSucceeded indicates restoration succeeded.<br /> |
+| `Failed` | EtcdMemberRestorationStatusFailed indicates restoration failed.<br /> |
+
+
+#### EtcdMemberRestorationType
+
+_Underlying type:_ _string_
+
+EtcdMemberRestorationType is the type of restoration.
+
+
+
+_Appears in:_
+- [EtcdMemberRestoration](#etcdmemberrestoration)
+
+| Field | Description |
+| --- | --- |
+| `FromSnapshot` | EtcdMemberRestorationTypeFromSnapshot indicates restoration from a backup snapshot.<br /> |
+| `FromLeader` | EtcdMemberRestorationTypeFromLeader indicates restoration by syncing from the cluster leader (learner join).<br /> |
+
+
+#### EtcdMemberState
+
+_Underlying type:_ _string_
+
+EtcdMemberState is the top-level state of an EtcdMember.
+
+
+
+_Appears in:_
+- [EtcdMemberTransition](#etcdmembertransition)
+
+| Field | Description |
+| --- | --- |
+| `New` | EtcdMemberStateNew is the initial state of a newly created EtcdMember.<br /> |
+| `Initializing` | EtcdMemberStateInitializing indicates backup-restore has started initialization (DB validation / restoration).<br /> |
+| `Starting` | EtcdMemberStateStarting indicates the member is joining the cluster as a learner.<br /> |
+| `Started` | EtcdMemberStateStarted indicates the member is a full voting member (Leader or Follower).<br /> |
 
 
 #### EtcdMemberStatus
@@ -774,6 +893,95 @@ _Appears in:_
 | `status` _[EtcdMemberConditionStatus](#etcdmemberconditionstatus)_ | Status of the condition, one of True, False, Unknown. |  |  |
 | `reason` _string_ | The reason for the condition's last transition. |  |  |
 | `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | LastTransitionTime is the last time the condition's status changed. |  |  |
+
+
+#### EtcdMemberSubState
+
+_Underlying type:_ _string_
+
+EtcdMemberSubState is the sub-state of an EtcdMember within its top-level state.
+
+
+
+_Appears in:_
+- [EtcdMemberTransition](#etcdmembertransition)
+
+| Field | Description |
+| --- | --- |
+| `New` | EtcdMemberSubStateNew is the sub-state for a newly created member.<br /> |
+| `DBValidationSanity` | EtcdMemberSubStateDBValidationSanity indicates sanity DB validation is in progress.<br /> |
+| `DBValidationFull` | EtcdMemberSubStateDBValidationFull indicates full DB validation is in progress.<br /> |
+| `Restoration` | EtcdMemberSubStateRestoration indicates DB restoration is in progress (single-node only).<br /> |
+| `PendingLearner` | EtcdMemberSubStatePendingLearner indicates the member is waiting to join as a learner.<br /> |
+| `Learner` | EtcdMemberSubStateLearner indicates the member has joined as a learner and is syncing from the leader.<br /> |
+| `Follower` | EtcdMemberSubStateFollower indicates the member is a voting follower.<br /> |
+| `Leader` | EtcdMemberSubStateLeader indicates the member is the cluster leader.<br /> |
+
+
+#### EtcdMemberTransition
+
+
+
+EtcdMemberTransition captures a single state transition of an EtcdMember.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `state` _[EtcdMemberState](#etcdmemberstate)_ | State is the top-level state the member transitioned to. |  |  |
+| `subState` _[EtcdMemberSubState](#etcdmembersubstate)_ | SubState is the sub-state the member transitioned to. |  |  |
+| `reason` _[EtcdMemberTransitionReason](#etcdmembertransitionreason)_ | Reason is the reason code for the transition. |  |  |
+| `transitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | TransitionTime is the time the transition occurred. |  |  |
+| `message` _string_ | Message is an optional human-readable message describing the transition. |  |  |
+
+
+#### EtcdMemberTransitionReason
+
+_Underlying type:_ _string_
+
+EtcdMemberTransitionReason is the reason code for a state transition.
+
+
+
+_Appears in:_
+- [EtcdMemberTransition](#etcdmembertransition)
+
+| Field | Description |
+| --- | --- |
+| `ClusterScaledUp` | EtcdMemberReasonClusterScaledUp indicates the member was added due to a cluster scale-up.<br /> |
+| `NewSingleNodeClusterCreated` | EtcdMemberReasonNewSingleNodeClusterCreated indicates a new single-node cluster was created.<br /> |
+| `DetectedPreviousCleanExit` | EtcdMemberReasonDetectedPreviousCleanExit indicates a clean previous exit was detected; sanity validation started.<br /> |
+| `DetectedPreviousUncleanExit` | EtcdMemberReasonDetectedPreviousUncleanExit indicates an unclean previous exit was detected; full validation started.<br /> |
+| `DBValidationFailed` | EtcdMemberReasonDBValidationFailed indicates DB validation failed.<br /> |
+| `DBValidationSucceeded` | EtcdMemberReasonDBValidationSucceeded indicates DB validation succeeded.<br /> |
+| `RestorationSucceeded` | EtcdMemberReasonRestorationSucceeded indicates DB restoration succeeded.<br /> |
+| `WaitingToJoinAsLearner` | EtcdMemberReasonWaitingToJoinAsLearner indicates the member is waiting to join as a learner.<br /> |
+| `JoinedAsLearner` | EtcdMemberReasonJoinedAsLearner indicates the member successfully joined as a learner.<br /> |
+| `PromotedAsVotingMember` | EtcdMemberReasonPromotedAsVotingMember indicates the learner was promoted to a voting member.<br /> |
+| `GainedClusterLeadership` | EtcdMemberReasonGainedClusterLeadership indicates the member became the cluster leader.<br /> |
+| `LostClusterLeadership` | EtcdMemberReasonLostClusterLeadership indicates the member lost cluster leadership.<br /> |
+
+
+#### EtcdMemberVolumeMismatch
+
+
+
+EtcdMemberVolumeMismatch captures information about a volume mismatch event detected by etcd-steward.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `identifiedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | IdentifiedAt is the time at which the wrong volume mount was identified. |  |  |
+| `fixedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | FixedAt is the time at which the correct volume was mounted. |  |  |
+| `volumeID` _string_ | VolumeID is the ID of the wrong volume that was mounted. |  |  |
+| `numRestarts` _integer_ | NumRestarts is the number of pod restarts attempted while this volume was mounted. |  |  |
 
 
 #### EtcdOpsTask
