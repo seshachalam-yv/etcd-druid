@@ -14,10 +14,11 @@ import (
 	"github.com/gardener/etcd-druid/internal/common"
 	testutils "github.com/gardener/etcd-druid/test/utils"
 
-	. "github.com/onsi/gomega"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	. "github.com/onsi/gomega"
 )
 
 // buildStsBuilderForEtcd constructs a minimal stsBuilder suitable for testing
@@ -36,10 +37,10 @@ func buildStsBuilderForEtcd(etcd *druidv1alpha1.Etcd) *stsBuilder {
 // generated for etcd-backup-restore (gate disabled) and etcd-steward (gate enabled).
 func TestBackupRestoreContainerCommandArgs(t *testing.T) {
 	testCases := []struct {
-		name             string
-		useEtcdSteward   bool
-		replicas         int32
-		withLocalBackup  bool
+		name            string
+		useEtcdSteward  bool
+		replicas        int32
+		withLocalBackup bool
 		// args that MUST be present in the output
 		mustContain []string
 		// args that MUST NOT be present in the output

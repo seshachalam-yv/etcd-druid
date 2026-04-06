@@ -22,7 +22,7 @@ const (
 	// LabelComponentKey is a key for a label that sets the component type on resources provisioned for an etcd cluster.
 	LabelComponentKey = "app.kubernetes.io/component"
 	// LabelOwnedByKey is a label key used on EtcdMember resources to identify the parent Etcd resource.
-	LabelOwnedByKey = "gardener.cloud/owned-by"
+	LabelOwnedByKey = "druid.gardener.cloud/owned-by"
 )
 
 // Annotation keys that can be placed on an Etcd custom resource.
