@@ -402,10 +402,14 @@ func (b *stsBuilder) getBackupRestoreContainer() (corev1.Container, error) {
 	}
 	env = append(env, providerEnv...)
 
+	pullPolicy := corev1.PullIfNotPresent
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		pullPolicy = corev1.PullAlways
+	}
 	return corev1.Container{
 		Name:            common.ContainerNameEtcdBackupRestore,
 		Image:           b.etcdBackupRestoreImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		ImagePullPolicy: pullPolicy,
 		Args:            b.getBackupRestoreContainerCommandArgs(),
 		Ports: []corev1.ContainerPort{
 			{
