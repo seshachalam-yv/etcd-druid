@@ -777,6 +777,27 @@ _Appears in:_
 | `Unknown` | EtcdMemberStatusUnknown indicates that the status of the etcd member is unknown.<br /> |
 
 
+#### EtcdMemberDefragmentation
+
+
+
+EtcdMemberDefragmentation captures information about the last defragmentation operation.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | StartTime is when the defragmentation started. |  |  |
+| `endTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | EndTime is when the defragmentation completed. |  |  |
+| `initialDBSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | InitialDBSize is the size of the etcd DB before defragmentation. |  |  |
+| `finalDBSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | FinalDBSize is the size of the etcd DB after defragmentation. |  |  |
+| `reason` _string_ | Reason is why defragmentation was triggered (e.g. "Scheduled", "NSPACEAlarm"). |  |  |
+| `message` _string_ | Message is an optional human-readable result message. |  |  |
+
+
 #### EtcdMemberResourceStatus
 
 
@@ -795,6 +816,8 @@ _Appears in:_
 | `peerTLSEnabled` _boolean_ | PeerTLSEnabled indicates whether TLS is enabled for peer communication for this member. |  |  |
 | `dbSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | DBSize is the total storage space used by the etcd DB on this member. |  |  |
 | `dbSizeInUse` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | DBSizeInUse is the logical storage space actively used by the etcd DB (excludes free pages). |  |  |
+| `snapshots` _[EtcdMemberSnapshots](#etcdmembersnapshots)_ | Snapshots captures the most recent full and delta snapshot metadata for this member.<br />etcd-steward populates this after each successful snapshot upload. |  |  |
+| `lastDefragmentation` _[EtcdMemberDefragmentation](#etcdmemberdefragmentation)_ | LastDefragmentation captures information about the most recent defragmentation operation. |  |  |
 | `transitions` _[EtcdMemberTransition](#etcdmembertransition) array_ | Transitions is the list of state transitions for this member, in chronological order. |  | MaxItems: 100 <br /> |
 | `volumeMismatches` _[EtcdMemberVolumeMismatch](#etcdmembervolumemismatch) array_ | VolumeMismatches captures volume mismatch events detected for this member. |  |  |
 | `lastRestoration` _[EtcdMemberRestoration](#etcdmemberrestoration)_ | LastRestoration captures information about the most recent restoration operation. |  |  |
@@ -853,6 +876,44 @@ _Appears in:_
 | --- | --- |
 | `FromSnapshot` | EtcdMemberRestorationTypeFromSnapshot indicates restoration from a backup snapshot.<br /> |
 | `FromLeader` | EtcdMemberRestorationTypeFromLeader indicates restoration by syncing from the cluster leader (learner join).<br /> |
+
+
+#### EtcdMemberSnapshotInfo
+
+
+
+EtcdMemberSnapshotInfo captures metadata about a single snapshot file.
+
+
+
+_Appears in:_
+- [EtcdMemberSnapshots](#etcdmembersnapshots)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the filename of the snapshot as stored in the snapstore. |  |  |
+| `timestamp` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | Timestamp is when the snapshot was taken. |  |  |
+| `startRevision` _integer_ | StartRevision is the first etcd revision captured in this snapshot. |  |  |
+| `endRevision` _integer_ | EndRevision is the last etcd revision captured in this snapshot. |  |  |
+| `size` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | Size is the size of the uncompressed snapshot in bytes. |  |  |
+
+
+#### EtcdMemberSnapshots
+
+
+
+EtcdMemberSnapshots captures the most recent full and delta snapshot metadata for a member.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `lastFull` _[EtcdMemberSnapshotInfo](#etcdmembersnapshotinfo)_ | LastFull is the metadata of the most recent full snapshot taken by this member. |  |  |
+| `lastDelta` _[EtcdMemberSnapshotInfo](#etcdmembersnapshotinfo)_ | LastDelta is the metadata of the most recent delta snapshot taken by this member. |  |  |
+| `accumulatedDeltaSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#quantity-resource-api)_ | AccumulatedDeltaSize is the total size of all delta snapshots since the last full snapshot.<br />etcd-druid's compaction controller uses this to decide when to trigger snapshot compaction. |  |  |
 
 
 #### EtcdMemberState
@@ -963,6 +1024,7 @@ _Appears in:_
 | `PromotedAsVotingMember` | EtcdMemberReasonPromotedAsVotingMember indicates the learner was promoted to a voting member.<br /> |
 | `GainedClusterLeadership` | EtcdMemberReasonGainedClusterLeadership indicates the member became the cluster leader.<br /> |
 | `LostClusterLeadership` | EtcdMemberReasonLostClusterLeadership indicates the member lost cluster leadership.<br /> |
+| `DataLossRecoveryStarted` | EtcdMemberReasonDataLossRecoveryStarted indicates data-loss was detected and the member is<br />re-joining the cluster as a learner to recover. This occurs when the member's PVC is replaced<br />or its data directory is missing while the rest of the cluster is healthy.<br /> |
 
 
 #### EtcdMemberVolumeMismatch

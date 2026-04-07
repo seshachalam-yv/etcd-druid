@@ -70,6 +70,42 @@ spec:
               id:
                 description: ID is the etcd member ID.
                 type: string
+              lastDefragmentation:
+                description: LastDefragmentation captures information about the most
+                  recent defragmentation operation.
+                properties:
+                  endTime:
+                    description: EndTime is when the defragmentation completed.
+                    format: date-time
+                    type: string
+                  finalDBSize:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: FinalDBSize is the size of the etcd DB after defragmentation.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  initialDBSize:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: InitialDBSize is the size of the etcd DB before defragmentation.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  message:
+                    description: Message is an optional human-readable result message.
+                    type: string
+                  reason:
+                    description: Reason is why defragmentation was triggered (e.g.
+                      "Scheduled", "NSPACEAlarm").
+                    type: string
+                  startTime:
+                    description: StartTime is when the defragmentation started.
+                    format: date-time
+                    type: string
+                required:
+                - startTime
+                type: object
               lastRestoration:
                 description: LastRestoration captures information about the most recent
                   restoration operation.
@@ -101,6 +137,93 @@ spec:
                 description: PeerTLSEnabled indicates whether TLS is enabled for peer
                   communication for this member.
                 type: boolean
+              snapshots:
+                description: |-
+                  Snapshots captures the most recent full and delta snapshot metadata for this member.
+                  etcd-steward populates this after each successful snapshot upload.
+                properties:
+                  accumulatedDeltaSize:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      AccumulatedDeltaSize is the total size of all delta snapshots since the last full snapshot.
+                      etcd-druid's compaction controller uses this to decide when to trigger snapshot compaction.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  lastDelta:
+                    description: LastDelta is the metadata of the most recent delta
+                      snapshot taken by this member.
+                    properties:
+                      endRevision:
+                        description: EndRevision is the last etcd revision captured
+                          in this snapshot.
+                        format: int64
+                        type: integer
+                      name:
+                        description: Name is the filename of the snapshot as stored
+                          in the snapstore.
+                        type: string
+                      size:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Size is the size of the uncompressed snapshot
+                          in bytes.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      startRevision:
+                        description: StartRevision is the first etcd revision captured
+                          in this snapshot.
+                        format: int64
+                        type: integer
+                      timestamp:
+                        description: Timestamp is when the snapshot was taken.
+                        format: date-time
+                        type: string
+                    required:
+                    - endRevision
+                    - name
+                    - startRevision
+                    - timestamp
+                    type: object
+                  lastFull:
+                    description: LastFull is the metadata of the most recent full
+                      snapshot taken by this member.
+                    properties:
+                      endRevision:
+                        description: EndRevision is the last etcd revision captured
+                          in this snapshot.
+                        format: int64
+                        type: integer
+                      name:
+                        description: Name is the filename of the snapshot as stored
+                          in the snapstore.
+                        type: string
+                      size:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Size is the size of the uncompressed snapshot
+                          in bytes.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      startRevision:
+                        description: StartRevision is the first etcd revision captured
+                          in this snapshot.
+                        format: int64
+                        type: integer
+                      timestamp:
+                        description: Timestamp is when the snapshot was taken.
+                        format: date-time
+                        type: string
+                    required:
+                    - endRevision
+                    - name
+                    - startRevision
+                    - timestamp
+                    type: object
+                type: object
               transitions:
                 description: Transitions is the list of state transitions for this
                   member, in chronological order.
