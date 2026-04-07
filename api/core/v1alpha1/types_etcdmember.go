@@ -73,6 +73,10 @@ const (
 	EtcdMemberReasonGainedClusterLeadership EtcdMemberTransitionReason = "GainedClusterLeadership"
 	// EtcdMemberReasonLostClusterLeadership indicates the member lost cluster leadership.
 	EtcdMemberReasonLostClusterLeadership EtcdMemberTransitionReason = "LostClusterLeadership"
+	// EtcdMemberReasonDataLossRecoveryStarted indicates data-loss was detected and the member is
+	// re-joining the cluster as a learner to recover. This occurs when the member's PVC is replaced
+	// or its data directory is missing while the rest of the cluster is healthy.
+	EtcdMemberReasonDataLossRecoveryStarted EtcdMemberTransitionReason = "DataLossRecoveryStarted"
 )
 
 // EtcdMemberRestorationStatus is the status of the last restoration operation.
@@ -143,6 +147,56 @@ type EtcdMemberRestoration struct {
 	Message *string `json:"message,omitempty"`
 }
 
+// EtcdMemberSnapshotInfo captures metadata about a single snapshot file.
+type EtcdMemberSnapshotInfo struct {
+	// Name is the filename of the snapshot as stored in the snapstore.
+	Name string `json:"name"`
+	// Timestamp is when the snapshot was taken.
+	Timestamp metav1.Time `json:"timestamp"`
+	// StartRevision is the first etcd revision captured in this snapshot.
+	StartRevision int64 `json:"startRevision"`
+	// EndRevision is the last etcd revision captured in this snapshot.
+	EndRevision int64 `json:"endRevision"`
+	// Size is the size of the uncompressed snapshot in bytes.
+	// +optional
+	Size *resource.Quantity `json:"size,omitempty"`
+}
+
+// EtcdMemberSnapshots captures the most recent full and delta snapshot metadata for a member.
+type EtcdMemberSnapshots struct {
+	// LastFull is the metadata of the most recent full snapshot taken by this member.
+	// +optional
+	LastFull *EtcdMemberSnapshotInfo `json:"lastFull,omitempty"`
+	// LastDelta is the metadata of the most recent delta snapshot taken by this member.
+	// +optional
+	LastDelta *EtcdMemberSnapshotInfo `json:"lastDelta,omitempty"`
+	// AccumulatedDeltaSize is the total size of all delta snapshots since the last full snapshot.
+	// etcd-druid's compaction controller uses this to decide when to trigger snapshot compaction.
+	// +optional
+	AccumulatedDeltaSize *resource.Quantity `json:"accumulatedDeltaSize,omitempty"`
+}
+
+// EtcdMemberDefragmentation captures information about the last defragmentation operation.
+type EtcdMemberDefragmentation struct {
+	// StartTime is when the defragmentation started.
+	StartTime metav1.Time `json:"startTime"`
+	// EndTime is when the defragmentation completed.
+	// +optional
+	EndTime *metav1.Time `json:"endTime,omitempty"`
+	// InitialDBSize is the size of the etcd DB before defragmentation.
+	// +optional
+	InitialDBSize *resource.Quantity `json:"initialDBSize,omitempty"`
+	// FinalDBSize is the size of the etcd DB after defragmentation.
+	// +optional
+	FinalDBSize *resource.Quantity `json:"finalDBSize,omitempty"`
+	// Reason is why defragmentation was triggered (e.g. "Scheduled", "NSPACEAlarm").
+	// +optional
+	Reason *string `json:"reason,omitempty"`
+	// Message is an optional human-readable result message.
+	// +optional
+	Message *string `json:"message,omitempty"`
+}
+
 // EtcdMemberResourceStatus defines the observed state of an EtcdMember.
 type EtcdMemberResourceStatus struct {
 	// ID is the etcd member ID.
@@ -160,6 +214,13 @@ type EtcdMemberResourceStatus struct {
 	// DBSizeInUse is the logical storage space actively used by the etcd DB (excludes free pages).
 	// +optional
 	DBSizeInUse *resource.Quantity `json:"dbSizeInUse,omitempty"`
+	// Snapshots captures the most recent full and delta snapshot metadata for this member.
+	// etcd-steward populates this after each successful snapshot upload.
+	// +optional
+	Snapshots *EtcdMemberSnapshots `json:"snapshots,omitempty"`
+	// LastDefragmentation captures information about the most recent defragmentation operation.
+	// +optional
+	LastDefragmentation *EtcdMemberDefragmentation `json:"lastDefragmentation,omitempty"`
 	// Transitions is the list of state transitions for this member, in chronological order.
 	// +optional
 	// +kubebuilder:validation:MaxItems=100
