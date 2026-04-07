@@ -443,7 +443,7 @@ func (b *stsBuilder) getStewardContainerCommandArgs() []string {
 	// Backup store related command line args
 	// -----------------------------------------------------------------------------------------------------------------
 	if b.etcd.IsBackupStoreEnabled() {
-		commandArgs = append(commandArgs, b.getBackupStoreCommandArgs()...)
+		commandArgs = append(commandArgs, b.getStewardBackupStoreCommandArgs()...)
 	}
 
 	// Defragmentation — etcd-steward uses --defrag-schedule (not --defragmentation-schedule)
@@ -644,6 +644,18 @@ func (b *stsBuilder) getBackupStoreCommandArgs() []string {
 		commandArgs = append(commandArgs, fmt.Sprintf("--full-snapshot-lease-name=%s", druidv1alpha1.GetFullSnapshotLeaseName(b.etcd.ObjectMeta)))
 		commandArgs = append(commandArgs, fmt.Sprintf("--delta-snapshot-lease-name=%s", druidv1alpha1.GetDeltaSnapshotLeaseName(b.etcd.ObjectMeta)))
 	}
+	commandArgs = append(commandArgs, b.getBackupStoreCommonArgs()...)
+	return commandArgs
+}
+
+// getStewardBackupStoreCommandArgs returns the backup store CLI args for etcd-steward.
+// Snapshot lease renewal is managed internally by etcd-steward so those flags are omitted.
+func (b *stsBuilder) getStewardBackupStoreCommandArgs() []string {
+	return b.getBackupStoreCommonArgs()
+}
+
+func (b *stsBuilder) getBackupStoreCommonArgs() []string {
+	var commandArgs []string
 	commandArgs = append(commandArgs, fmt.Sprintf("--storage-provider=%s", *b.provider))
 	commandArgs = append(commandArgs, fmt.Sprintf("--store-prefix=%s", b.etcd.Spec.Backup.Store.Prefix))
 	if b.etcd.Spec.Backup.Store.EndpointOverride != nil {
