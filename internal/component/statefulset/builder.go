@@ -658,6 +658,13 @@ func (b *stsBuilder) getBackupStoreCommonArgs() []string {
 	var commandArgs []string
 	commandArgs = append(commandArgs, fmt.Sprintf("--storage-provider=%s", *b.provider))
 	commandArgs = append(commandArgs, fmt.Sprintf("--store-prefix=%s", b.etcd.Spec.Backup.Store.Prefix))
+	// For the local provider, --store-container must be the volume mount path (the base dir for the local snapstore).
+	// For cloud providers, --store-container is the bucket/container name passed via env var (STORAGE_CONTAINER).
+	if *b.provider == druidstore.Local {
+		if mountPath := kubernetes.MountPathLocalStore(b.etcd, b.provider); mountPath != "" {
+			commandArgs = append(commandArgs, fmt.Sprintf("--store-container=%s", mountPath))
+		}
+	}
 	if b.etcd.Spec.Backup.Store.EndpointOverride != nil {
 		commandArgs = append(commandArgs, fmt.Sprintf("--store-endpoint-override=%s", *b.etcd.Spec.Backup.Store.EndpointOverride))
 	}
@@ -726,7 +733,9 @@ func (b *stsBuilder) getEtcdContainerReadinessProbe() *corev1.Probe {
 }
 
 func (b *stsBuilder) getEtcdContainerReadinessHandler() corev1.ProbeHandler {
-	scheme := utils.IfConditionOr(b.etcd.Spec.Backup.TLS == nil, corev1.URISchemeHTTP, corev1.URISchemeHTTPS)
+	// etcd-wrapper enables TLS on its readyz port when either the etcd client TLS or the backup TLS is configured.
+	etcdTLSEnabled := b.etcd.Spec.Etcd.ClientUrlTLS != nil || b.etcd.Spec.Backup.TLS != nil
+	scheme := utils.IfConditionOr(!etcdTLSEnabled, corev1.URISchemeHTTP, corev1.URISchemeHTTPS)
 
 	return corev1.ProbeHandler{
 		HTTPGet: &corev1.HTTPGetAction{
