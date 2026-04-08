@@ -73,6 +73,17 @@ func testWithEtcdWrapperAndEtcdBRImagesInSpec(g *WithT, etcd *druidv1alpha1.Etcd
 }
 
 func testWithNoImageInSpecAndIVWithEtcdWrapperAndBRImages(g *WithT, etcd *druidv1alpha1.Etcd) {
+	// Explicitly disable UseEtcdSteward so this test exercises the legacy code path.
+	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+	)
+	g.Expect(err).ToNot(HaveOccurred())
+	defer func() {
+		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+			map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
+		)
+	}()
+
 	etcd.Spec.Etcd.Image = nil
 	etcd.Spec.Backup.Image = nil
 	iv := testutils.CreateImageVector(true, true)
@@ -92,6 +103,17 @@ func testWithNoImageInSpecAndIVWithEtcdWrapperAndBRImages(g *WithT, etcd *druidv
 }
 
 func testSpecWithEtcdBRImageAndIVWithEtcdWrapperImage(g *WithT, etcd *druidv1alpha1.Etcd) {
+	// Explicitly disable UseEtcdSteward so this test exercises the legacy code path.
+	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+	)
+	g.Expect(err).ToNot(HaveOccurred())
+	defer func() {
+		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+			map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
+		)
+	}()
+
 	etcd.Spec.Etcd.Image = nil
 	iv := testutils.CreateImageVector(true, false)
 	etcdImage, etcdBackupRestoreImage, initContainerImage, err := utils.GetEtcdImages(etcd, iv)
@@ -128,10 +150,23 @@ func testWithSpecAndIVNotHavingAnyImages(g *WithT, etcd *druidv1alpha1.Etcd) {
 }
 
 func testWithUpgradeEtcdVersionFeatureGateEnabled(g *WithT, etcd *druidv1alpha1.Etcd) {
+	// UseEtcdSteward takes priority over UpgradeEtcdVersion. Disable it so this
+	// test can exercise the UpgradeEtcdVersion code path in isolation.
 	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
-		map[string]bool{druidconfigv1alpha1.UpgradeEtcdVersion: true},
+		map[string]bool{
+			druidconfigv1alpha1.UpgradeEtcdVersion: true,
+			druidconfigv1alpha1.UseEtcdSteward:     false,
+		},
 	)
 	g.Expect(err).ToNot(HaveOccurred())
+	defer func() {
+		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+			map[string]bool{
+				druidconfigv1alpha1.UpgradeEtcdVersion: false,
+				druidconfigv1alpha1.UseEtcdSteward:     true,
+			},
+		)
+	}()
 
 	etcd.Spec.Etcd.Image = nil
 	etcd.Spec.Backup.Image = nil
@@ -150,10 +185,19 @@ func testWithUpgradeEtcdVersionFeatureGateEnabled(g *WithT, etcd *druidv1alpha1.
 }
 
 func testWithUpgradeEtcdVersionFeatureGateDisabled(g *WithT, etcd *druidv1alpha1.Etcd) {
+	// Disable both feature gates so this test exercises the legacy code path.
 	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
-		map[string]bool{druidconfigv1alpha1.UpgradeEtcdVersion: false},
+		map[string]bool{
+			druidconfigv1alpha1.UpgradeEtcdVersion: false,
+			druidconfigv1alpha1.UseEtcdSteward:     false,
+		},
 	)
 	g.Expect(err).ToNot(HaveOccurred())
+	defer func() {
+		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+			map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
+		)
+	}()
 
 	etcd.Spec.Etcd.Image = nil
 	etcd.Spec.Backup.Image = nil
@@ -176,11 +220,6 @@ func testWithUseEtcdStewardFeatureGateEnabled(g *WithT, etcd *druidv1alpha1.Etcd
 		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
 	)
 	g.Expect(err).ToNot(HaveOccurred())
-	defer func() {
-		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
-			map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
-		)
-	}()
 
 	etcd.Spec.Etcd.Image = nil
 	etcd.Spec.Backup.Image = nil
@@ -199,6 +238,11 @@ func testWithUseEtcdStewardFeatureGateDisabled(g *WithT, etcd *druidv1alpha1.Etc
 		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
 	)
 	g.Expect(err).ToNot(HaveOccurred())
+	defer func() {
+		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+			map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
+		)
+	}()
 
 	etcd.Spec.Etcd.Image = nil
 	etcd.Spec.Backup.Image = nil

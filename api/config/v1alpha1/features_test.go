@@ -59,7 +59,7 @@ func TestDefaultFeatureGate(t *testing.T) {
 			},
 		},
 		{
-			name: "UseEtcdSteward can be enabled (alpha feature)",
+			name: "UseEtcdSteward can be explicitly enabled (beta feature)",
 			enabledFeatures: map[string]bool{
 				UseEtcdSteward: true,
 			},
@@ -68,7 +68,7 @@ func TestDefaultFeatureGate(t *testing.T) {
 			},
 		},
 		{
-			name: "UseEtcdSteward can be disabled (alpha feature)",
+			name: "UseEtcdSteward can be explicitly disabled (beta feature)",
 			enabledFeatures: map[string]bool{
 				UseEtcdSteward: false,
 			},
@@ -195,4 +195,22 @@ func TestIsEnabled(t *testing.T) {
 			g.Expect(fg.IsEnabled(test.feature)).To(Equal(test.expected))
 		})
 	}
+}
+
+func TestIsEnabled_DefaultsToEnabledByDefault(t *testing.T) {
+	// When a feature is known but not set via SetEnabledFeaturesFromMap,
+	// IsEnabled must fall back to enabledByDefault from the maturity level spec.
+	fg := newFeatureGate()
+	fg.knownFeatures = map[string]maturityLevelSpec{
+		"alphaFeature": maturityLevelSpecAlpha, // enabledByDefault=false
+		"betaFeature":  maturityLevelSpecBeta,  // enabledByDefault=true
+		"gaFeature":    maturityLevelSpecGA,    // enabledByDefault=true
+	}
+	// enabledFeatures intentionally empty — no explicit settings.
+
+	g := NewWithT(t)
+	g.Expect(fg.IsEnabled("alphaFeature")).To(BeFalse(), "alpha feature should default to disabled")
+	g.Expect(fg.IsEnabled("betaFeature")).To(BeTrue(), "beta feature should default to enabled")
+	g.Expect(fg.IsEnabled("gaFeature")).To(BeTrue(), "GA feature should default to enabled")
+	g.Expect(fg.IsEnabled("unknownFeature")).To(BeFalse(), "unknown feature should return false")
 }

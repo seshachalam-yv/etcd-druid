@@ -20,7 +20,7 @@ const (
 
 	// UseEtcdSteward is the name of the feature which enables the etcd-steward sidecar
 	// as a replacement for etcd-backup-restore in the etcd StatefulSet.
-	// This is an alpha feature and is disabled by default.
+	// This is a beta feature and is enabled by default.
 	UseEtcdSteward = "UseEtcdSteward"
 )
 
@@ -90,12 +90,20 @@ var DefaultFeatureGates = newFeatureGate()
 func init() {
 	DefaultFeatureGates.knownFeatures[UseEtcdWrapper] = maturityLevelSpecGA
 	DefaultFeatureGates.knownFeatures[UpgradeEtcdVersion] = maturityLevelSpecAlpha
-	DefaultFeatureGates.knownFeatures[UseEtcdSteward] = maturityLevelSpecAlpha
+	DefaultFeatureGates.knownFeatures[UseEtcdSteward] = maturityLevelSpecBeta
 }
 
 // IsEnabled checks if a feature is enabled.
+// It first checks if the feature was explicitly set via SetEnabledFeaturesFromMap,
+// then falls back to the enabledByDefault value from the maturity level spec.
 func (f *featureGate) IsEnabled(feature string) bool {
-	return f.enabledFeatures[feature]
+	if enabled, ok := f.enabledFeatures[feature]; ok {
+		return enabled
+	}
+	if spec, ok := f.knownFeatures[feature]; ok {
+		return spec.enabledByDefault
+	}
+	return false
 }
 
 // SetEnabledFeaturesFromMap sets enabled state for features from the given map.
