@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	. "github.com/onsi/gomega"
@@ -221,5 +222,70 @@ func buildEmptySTS(etcd *druidv1alpha1.Etcd) *appsv1.StatefulSet {
 			Name:      etcd.Name,
 			Namespace: etcd.Namespace,
 		},
+	}
+}
+
+// TestReadinessProbeScheme verifies that the readiness probe uses HTTPS when
+// either clientUrlTLS or backup TLS is configured, and HTTP otherwise.
+//
+// Background: etcd-wrapper enables TLS on its readyz port (default 9095) when
+// the etcd config contains a client certificate (i.e. clientUrlTLS is set).
+// Prior to this fix, the probe only switched to HTTPS when backup.TLS was set,
+// causing the pod to be stuck at 1/2 Ready when clientUrlTLS was configured but
+// backup TLS was not (observed during Phase B of the lifecycle test).
+func TestReadinessProbeScheme(t *testing.T) {
+	tests := []struct {
+		name          string
+		withClientTLS bool
+		withBackupTLS bool
+		wantScheme    corev1.URIScheme
+	}{
+		{
+			name:          "no TLS — HTTP probe",
+			withClientTLS: false,
+			withBackupTLS: false,
+			wantScheme:    corev1.URISchemeHTTP,
+		},
+		{
+			name:          "clientUrlTLS only — HTTPS probe",
+			withClientTLS: true,
+			withBackupTLS: false,
+			wantScheme:    corev1.URISchemeHTTPS,
+		},
+		{
+			name:          "backup TLS only — HTTPS probe",
+			withClientTLS: false,
+			withBackupTLS: true,
+			wantScheme:    corev1.URISchemeHTTPS,
+		},
+		{
+			name:          "both TLS configs — HTTPS probe",
+			withClientTLS: true,
+			withBackupTLS: true,
+			wantScheme:    corev1.URISchemeHTTPS,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			eb := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).
+				WithReplicas(1)
+			if tc.withClientTLS {
+				eb = eb.WithClientTLS()
+			}
+			if tc.withBackupTLS {
+				eb = eb.WithBackupRestoreTLS()
+			}
+			etcd := eb.Build()
+
+			b := buildStsBuilderForEtcd(etcd)
+			handler := b.getEtcdContainerReadinessHandler()
+
+			g.Expect(handler.HTTPGet).ToNot(BeNil(), "readiness probe must use HTTPGet")
+			g.Expect(handler.HTTPGet.Scheme).To(Equal(tc.wantScheme),
+				"scheme mismatch for clientTLS=%v backupTLS=%v", tc.withClientTLS, tc.withBackupTLS)
+		})
 	}
 }

@@ -13,6 +13,7 @@ aliases:
   - unmarshall
   etcd-druid-approvers:
   - ishan16696
+  - seshachalam-yv
   - shreyas-s-rao
   - unmarshall
   - anveshreddy18
