@@ -11,15 +11,18 @@ import (
 
 	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
+	kubernetes "github.com/gardener/etcd-druid/internal/client/kubernetes"
 	"github.com/gardener/etcd-druid/internal/utils"
 	testutils "github.com/gardener/etcd-druid/test/utils"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	. "github.com/onsi/gomega"
 )
@@ -324,9 +327,6 @@ func TestGetCompactionJobArgs(t *testing.T) {
 				"--restoration-temp-snapshots-dir=/var/etcd/data/compaction.restoration.temp",
 				"--snapstore-temp-directory=/var/etcd/data/tmp",
 				"--metrics-scrape-wait-duration=" + testMetricsScrape,
-				"--enable-snapshot-lease-renewal=true",
-				"--full-snapshot-lease-name=" + testEtcdName + "-full-snap",
-				"--delta-snapshot-lease-name=" + testEtcdName + "-delta-snap",
 				"--embedded-etcd-quota-bytes=8589934592",
 				"--storage-provider=S3",
 				"--store-prefix=" + testPrefix,
@@ -334,6 +334,9 @@ func TestGetCompactionJobArgs(t *testing.T) {
 			},
 			expectedArgsNotContainFlags: []string{
 				"--store-endpoint-override",
+				"--enable-snapshot-lease-renewal",
+				"--full-snapshot-lease-name",
+				"--delta-snapshot-lease-name",
 			},
 		},
 		{
@@ -405,13 +408,15 @@ func TestGetCompactionJobArgs(t *testing.T) {
 			expectedArgsContains: []string{
 				"compact",
 				"--data-dir=/var/etcd/data/compaction.etcd",
-				"--enable-snapshot-lease-renewal=true",
 			},
 			expectedArgsNotContainFlags: []string{
 				"--storage-provider",
 				"--store-prefix",
 				"--store-container",
 				"--store-endpoint-override",
+				"--enable-snapshot-lease-renewal",
+				"--full-snapshot-lease-name",
+				"--delta-snapshot-lease-name",
 			},
 		},
 		{
@@ -591,4 +596,178 @@ func TestGetPodForJob(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetDeltaRevisionFromEtcdMember_NoMember(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+
+	etcd := &druidv1alpha1.Etcd{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName,
+			Namespace: testutils.TestNamespace,
+		},
+	}
+	fakeClient := testutils.CreateTestFakeClientWithSchemeForObjects(kubernetes.Scheme, nil, nil, nil, nil, nil)
+	r := &Reconciler{Client: fakeClient}
+
+	diff, err := r.getDeltaRevisionFromEtcdMember(context.TODO(), log.Log, etcd)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(diff).To(Equal(int64(0)))
+}
+
+func TestGetDeltaRevisionFromEtcdMember_NoSnapshots(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+
+	etcd := &druidv1alpha1.Etcd{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName,
+			Namespace: testutils.TestNamespace,
+		},
+	}
+	member := &druidv1alpha1.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName + "-0",
+			Namespace: testutils.TestNamespace,
+			Labels: map[string]string{
+				druidv1alpha1.LabelManagedByKey: druidv1alpha1.LabelManagedByValue,
+				druidv1alpha1.LabelPartOfKey:    testutils.TestEtcdName,
+				druidv1alpha1.LabelComponentKey: "etcd-member",
+			},
+		},
+		Status: druidv1alpha1.EtcdMemberResourceStatus{
+			Snapshots: nil,
+		},
+	}
+	fakeClient := testutils.CreateTestFakeClientWithSchemeForObjects(kubernetes.Scheme, nil, nil, nil, nil, []client.Object{member})
+	r := &Reconciler{Client: fakeClient}
+
+	diff, err := r.getDeltaRevisionFromEtcdMember(context.TODO(), log.Log, etcd)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(diff).To(Equal(int64(0)))
+}
+
+func TestGetDeltaRevisionFromEtcdMember_FullOnly(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+
+	etcd := &druidv1alpha1.Etcd{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName,
+			Namespace: testutils.TestNamespace,
+		},
+	}
+	member := &druidv1alpha1.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName + "-0",
+			Namespace: testutils.TestNamespace,
+			Labels: map[string]string{
+				druidv1alpha1.LabelManagedByKey: druidv1alpha1.LabelManagedByValue,
+				druidv1alpha1.LabelPartOfKey:    testutils.TestEtcdName,
+				druidv1alpha1.LabelComponentKey: "etcd-member",
+			},
+		},
+		Status: druidv1alpha1.EtcdMemberResourceStatus{
+			Snapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{
+					EndRevision: 500,
+				},
+			},
+		},
+	}
+	fakeClient := testutils.CreateTestFakeClientWithSchemeForObjects(kubernetes.Scheme, nil, nil, nil, nil, []client.Object{member})
+	r := &Reconciler{Client: fakeClient}
+
+	diff, err := r.getDeltaRevisionFromEtcdMember(context.TODO(), log.Log, etcd)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(diff).To(Equal(int64(0)))
+}
+
+func TestGetDeltaRevisionFromEtcdMember_FullAndDelta(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+
+	const fullEndRev = int64(500)
+	const deltaEndRev = int64(800)
+
+	etcd := &druidv1alpha1.Etcd{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName,
+			Namespace: testutils.TestNamespace,
+		},
+	}
+	member := &druidv1alpha1.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName + "-0",
+			Namespace: testutils.TestNamespace,
+			Labels: map[string]string{
+				druidv1alpha1.LabelManagedByKey: druidv1alpha1.LabelManagedByValue,
+				druidv1alpha1.LabelPartOfKey:    testutils.TestEtcdName,
+				druidv1alpha1.LabelComponentKey: "etcd-member",
+			},
+		},
+		Status: druidv1alpha1.EtcdMemberResourceStatus{
+			Snapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{
+					EndRevision: fullEndRev,
+				},
+				LastDelta: &druidv1alpha1.EtcdMemberSnapshotInfo{
+					EndRevision: deltaEndRev,
+				},
+			},
+		},
+	}
+	fakeClient := testutils.CreateTestFakeClientWithSchemeForObjects(kubernetes.Scheme, nil, nil, nil, nil, []client.Object{member})
+	r := &Reconciler{Client: fakeClient}
+
+	diff, err := r.getDeltaRevisionFromEtcdMember(context.TODO(), log.Log, etcd)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(diff).To(Equal(deltaEndRev - fullEndRev))
+}
+
+func TestGetDeltaRevisionFromEtcdMember_AccumulatedSize(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+
+	const fullEndRev = int64(100)
+	const deltaEndRev = int64(200)
+	accSize := resource.MustParse("500Mi")
+
+	etcd := &druidv1alpha1.Etcd{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName,
+			Namespace: testutils.TestNamespace,
+		},
+	}
+	member := &druidv1alpha1.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testutils.TestEtcdName + "-0",
+			Namespace: testutils.TestNamespace,
+			Labels: map[string]string{
+				druidv1alpha1.LabelManagedByKey: druidv1alpha1.LabelManagedByValue,
+				druidv1alpha1.LabelPartOfKey:    testutils.TestEtcdName,
+				druidv1alpha1.LabelComponentKey: "etcd-member",
+			},
+		},
+		Status: druidv1alpha1.EtcdMemberResourceStatus{
+			Snapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{
+					EndRevision: fullEndRev,
+				},
+				LastDelta: &druidv1alpha1.EtcdMemberSnapshotInfo{
+					EndRevision: deltaEndRev,
+				},
+				AccumulatedDeltaSize: &accSize,
+			},
+		},
+	}
+	fakeClient := testutils.CreateTestFakeClientWithSchemeForObjects(kubernetes.Scheme, nil, nil, nil, nil, []client.Object{member})
+	r := &Reconciler{Client: fakeClient}
+
+	diff, err := r.getDeltaRevisionFromEtcdMember(context.TODO(), log.Log, etcd)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(diff).To(Equal(deltaEndRev - fullEndRev))
+	g.Expect(member.Status.Snapshots.AccumulatedDeltaSize).NotTo(BeNil())
+	g.Expect(member.Status.Snapshots.AccumulatedDeltaSize.Cmp(resource.MustParse("500Mi"))).To(Equal(0))
 }

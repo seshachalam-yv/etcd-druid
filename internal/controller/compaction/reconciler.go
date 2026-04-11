@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
@@ -24,7 +23,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	batchv1 "k8s.io/api/batch/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -179,7 +177,7 @@ func (r *Reconciler) doReconcile(ctx context.Context, logger logr.Logger, etcd *
 
 	logger.Info("No compaction job is currently running")
 
-	diff, err := r.getDeltaRevisionsSinceFullSnapshot(ctx, logger, etcd)
+	diff, err := r.getDeltaRevisionFromEtcdMember(ctx, logger, etcd)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error while getting difference between delta and full snapshot revisions: %w", err)
 	}
@@ -310,43 +308,41 @@ func (r *Reconciler) delete(ctx context.Context, logger logr.Logger, etcd *druid
 	return ctrl.Result{}, nil
 }
 
-// getDeltaRevisionsSinceFullSnapshot retrieves the difference between the full and delta snapshot revisions for the given Etcd resource.
-func (r *Reconciler) getDeltaRevisionsSinceFullSnapshot(ctx context.Context, logger logr.Logger, etcd *druidv1alpha1.Etcd) (int64, error) {
-	// Get full and delta snapshot lease to check the HolderIdentity value to take decision on compaction job
-	fullLease := &coordinationv1.Lease{}
-	fullSnapshotLeaseName := druidv1alpha1.GetFullSnapshotLeaseName(etcd.ObjectMeta)
-	if err := r.Get(ctx, client.ObjectKey{Namespace: etcd.Namespace, Name: fullSnapshotLeaseName}, fullLease); err != nil {
-		logger.Error(err, "Couldn't fetch full snap lease", "leaseName", fullSnapshotLeaseName)
+// getDeltaRevisionFromEtcdMember retrieves the number of etcd revisions accumulated since the last full snapshot
+// by reading EtcdMember.Status.Snapshots for the given Etcd resource.
+// It returns the difference between the delta snapshot's EndRevision and the full snapshot's EndRevision.
+// If no EtcdMember exists or no snapshot information is available, it returns 0, nil.
+func (r *Reconciler) getDeltaRevisionFromEtcdMember(ctx context.Context, logger logr.Logger, etcd *druidv1alpha1.Etcd) (int64, error) {
+	memberList := &druidv1alpha1.EtcdMemberList{}
+	selectorLabels := map[string]string{
+		druidv1alpha1.LabelManagedByKey:  druidv1alpha1.LabelManagedByValue,
+		druidv1alpha1.LabelPartOfKey:     etcd.Name,
+		druidv1alpha1.LabelComponentKey:  "etcd-member",
+	}
+	if err := r.List(ctx, memberList, client.InNamespace(etcd.Namespace), client.MatchingLabels(selectorLabels)); err != nil {
+		logger.Error(err, "Couldn't list EtcdMembers for etcd", "etcdName", etcd.Name)
 		return 0, err
 	}
 
-	deltaLease := &coordinationv1.Lease{}
-	deltaSnapshotLeaseName := druidv1alpha1.GetDeltaSnapshotLeaseName(etcd.ObjectMeta)
-	if err := r.Get(ctx, client.ObjectKey{Namespace: etcd.Namespace, Name: deltaSnapshotLeaseName}, deltaLease); err != nil {
-		logger.Error(err, "Couldn't fetch delta snap lease", "leaseName", deltaSnapshotLeaseName)
-		return 0, err
+	for _, member := range memberList.Items {
+		snapshots := member.Status.Snapshots
+		if snapshots == nil {
+			continue
+		}
+		if snapshots.LastFull == nil {
+			continue
+		}
+		fullEndRev := snapshots.LastFull.EndRevision
+		if snapshots.LastDelta == nil {
+			// Only a full snapshot exists, no delta revisions accumulated
+			return 0, nil
+		}
+		deltaEndRev := snapshots.LastDelta.EndRevision
+		return deltaEndRev - fullEndRev, nil
 	}
 
-	// Revisions have not been set yet by etcd-back-restore container.
-	// Skip further processing as we cannot calculate a revision delta.
-	if fullLease.Spec.HolderIdentity == nil || deltaLease.Spec.HolderIdentity == nil {
-		return 0, fmt.Errorf("holder identity is not set for full or delta snapshot lease, cannot calculate revision delta")
-	}
-
-	full, err := strconv.ParseInt(*fullLease.Spec.HolderIdentity, 10, 64)
-	if err != nil {
-		logger.Error(err, "Can't convert holder identity of full snap lease to integer",
-			"leaseName", fullLease.Name, "holderIdentity", fullLease.Spec.HolderIdentity)
-		return 0, err
-	}
-
-	delta, err := strconv.ParseInt(*deltaLease.Spec.HolderIdentity, 10, 64)
-	if err != nil {
-		logger.Error(err, "Can't convert holder identity of delta snap lease to integer",
-			"leaseName", deltaLease.Name, "holderIdentity", deltaLease.Spec.HolderIdentity)
-		return 0, err
-	}
-	return delta - full, nil
+	// No EtcdMember with snapshot data found
+	return 0, nil
 }
 
 // triggerFullSnapshotOrCreateCompactionJob triggers a full snapshot or creates a compaction job based on the accumulated revisions and the last compaction job status.
@@ -811,9 +807,6 @@ func getCompactionJobArgs(etcd *druidv1alpha1.Etcd, metricsScrapeWaitDuration st
 	command = append(command, "--restoration-temp-snapshots-dir=/var/etcd/data/compaction.restoration.temp")
 	command = append(command, "--snapstore-temp-directory=/var/etcd/data/tmp")
 	command = append(command, fmt.Sprintf("--metrics-scrape-wait-duration=%s", metricsScrapeWaitDuration))
-	command = append(command, "--enable-snapshot-lease-renewal=true")
-	command = append(command, fmt.Sprintf("--full-snapshot-lease-name=%s", druidv1alpha1.GetFullSnapshotLeaseName(etcd.ObjectMeta)))
-	command = append(command, fmt.Sprintf("--delta-snapshot-lease-name=%s", druidv1alpha1.GetDeltaSnapshotLeaseName(etcd.ObjectMeta)))
 
 	var quota int64 = DefaultETCDQuota
 	if etcd.Spec.Etcd.Quota != nil {

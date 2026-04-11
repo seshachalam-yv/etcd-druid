@@ -15,8 +15,8 @@ import (
 	"github.com/gardener/etcd-druid/test/utils"
 
 	batchv1 "k8s.io/api/batch/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,144 +25,115 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestSnapshotRevisionChangedForCreateEvents(t *testing.T) {
+func TestEtcdMemberSnapshotsChangedForCreateEvents(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+	p := etcdMemberSnapshotsChanged()
+	member := &druidv1alpha1.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-member"},
+	}
+	g.Expect(p.Create(event.CreateEvent{Object: member})).To(BeFalse())
+}
+
+func TestEtcdMemberSnapshotsChangedForDeleteEvents(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+	p := etcdMemberSnapshotsChanged()
+	member := &druidv1alpha1.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-member"},
+	}
+	g.Expect(p.Delete(event.DeleteEvent{Object: member})).To(BeFalse())
+}
+
+func TestEtcdMemberSnapshotsChangedForGenericEvents(t *testing.T) {
+	g := NewWithT(t)
+	t.Parallel()
+	p := etcdMemberSnapshotsChanged()
+	member := &druidv1alpha1.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-member"},
+	}
+	g.Expect(p.Generic(event.GenericEvent{Object: member})).To(BeFalse())
+}
+
+func TestEtcdMemberSnapshotsChangedForUpdateEvents(t *testing.T) {
+	qty100 := resource.MustParse("100Mi")
 	tests := []struct {
-		name                   string
-		isObjectLease          bool
-		objectName             string
-		isHolderIdentitySet    bool
-		shouldAllowCreateEvent bool
+		name                string
+		oldSnapshots        *druidv1alpha1.EtcdMemberSnapshots
+		newSnapshots        *druidv1alpha1.EtcdMemberSnapshots
+		expectedAllowUpdate bool
 	}{
 		{
-			name:                   "object is not a lease object",
-			isObjectLease:          false,
-			objectName:             "not-a-lease",
-			shouldAllowCreateEvent: false,
+			name:                "both nil — no change",
+			oldSnapshots:        nil,
+			newSnapshots:        nil,
+			expectedAllowUpdate: false,
 		},
 		{
-			name:                   "object is a lease object, but not a snapshot lease",
-			isObjectLease:          true,
-			objectName:             "different-lease",
-			shouldAllowCreateEvent: false,
+			name:         "snapshots added — nil to non-nil",
+			oldSnapshots: nil,
+			newSnapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{EndRevision: 100},
+			},
+			expectedAllowUpdate: true,
 		},
 		{
-			name:                   "object is a new delta-snapshot lease, but holder identity is not set",
-			isObjectLease:          true,
-			objectName:             "etcd-test-delta-snap",
-			isHolderIdentitySet:    false,
-			shouldAllowCreateEvent: true,
+			name: "LastFull EndRevision changed",
+			oldSnapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{EndRevision: 100},
+			},
+			newSnapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{EndRevision: 200},
+			},
+			expectedAllowUpdate: true,
 		},
 		{
-			name:                   "object is a new delta-snapshot lease, and holder identity is set",
-			isObjectLease:          true,
-			objectName:             "etcd-test-delta-snap",
-			isHolderIdentitySet:    true,
-			shouldAllowCreateEvent: true,
+			name: "AccumulatedDeltaSize changed",
+			oldSnapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull:             &druidv1alpha1.EtcdMemberSnapshotInfo{EndRevision: 100},
+				AccumulatedDeltaSize: &qty100,
+			},
+			newSnapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull:             &druidv1alpha1.EtcdMemberSnapshotInfo{EndRevision: 100},
+				AccumulatedDeltaSize: ptr.To(resource.MustParse("200Mi")),
+			},
+			expectedAllowUpdate: true,
 		},
 		{
-			name:                   "object is a new full-snapshot lease, but holder identity is not set",
-			isObjectLease:          true,
-			objectName:             "etcd-test-full-snap",
-			isHolderIdentitySet:    false,
-			shouldAllowCreateEvent: true,
+			name: "no change to snapshots",
+			oldSnapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{EndRevision: 100},
+			},
+			newSnapshots: &druidv1alpha1.EtcdMemberSnapshots{
+				LastFull: &druidv1alpha1.EtcdMemberSnapshotInfo{EndRevision: 100},
+			},
+			expectedAllowUpdate: false,
 		},
 		{
-			name:                   "object is a new full-snapshot lease, and holder identity is set",
-			isObjectLease:          true,
-			objectName:             "etcd-test-full-snap",
-			isHolderIdentitySet:    true,
-			shouldAllowCreateEvent: true,
+			name:                "object is not an EtcdMember — returns false",
+			oldSnapshots:        nil,
+			newSnapshots:        nil,
+			expectedAllowUpdate: false,
 		},
 	}
 
 	g := NewWithT(t)
 	t.Parallel()
-	predicate := snapshotRevisionChanged()
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	p := etcdMemberSnapshotsChanged()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			obj, _ := createObjectsForSnapshotLeasePredicate(g, test.objectName, test.isObjectLease, true, test.isHolderIdentitySet, false)
-			g.Expect(predicate.Create(event.CreateEvent{Object: obj})).To(Equal(test.shouldAllowCreateEvent))
+			oldMember := &druidv1alpha1.EtcdMember{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-member"},
+				Status:     druidv1alpha1.EtcdMemberResourceStatus{Snapshots: tc.oldSnapshots},
+			}
+			newMember := &druidv1alpha1.EtcdMember{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-member"},
+				Status:     druidv1alpha1.EtcdMemberResourceStatus{Snapshots: tc.newSnapshots},
+			}
+			g.Expect(p.Update(event.UpdateEvent{ObjectOld: oldMember, ObjectNew: newMember})).To(Equal(tc.expectedAllowUpdate))
 		})
 	}
-}
-
-func TestSnapshotRevisionChangedForUpdateEvents(t *testing.T) {
-	tests := []struct {
-		name                    string
-		isObjectLease           bool
-		objectName              string
-		isHolderIdentityChanged bool
-		shouldAllowUpdateEvent  bool
-	}{
-		{
-			name:                   "object is not a lease object",
-			isObjectLease:          false,
-			objectName:             "not-a-lease",
-			shouldAllowUpdateEvent: false,
-		},
-		{
-			name:                   "object is a lease object, but not a snapshot lease",
-			isObjectLease:          true,
-			objectName:             "different-lease",
-			shouldAllowUpdateEvent: false,
-		},
-		{
-			name:                    "object is a delta-snapshot lease, but holder identity is not changed",
-			isObjectLease:           true,
-			objectName:              "etcd-test-delta-snap",
-			isHolderIdentityChanged: false,
-			shouldAllowUpdateEvent:  false,
-		},
-		{
-			name:                    "object is a delta-snapshot lease, and holder identity is changed",
-			isObjectLease:           true,
-			objectName:              "etcd-test-delta-snap",
-			isHolderIdentityChanged: true,
-			shouldAllowUpdateEvent:  true,
-		},
-		{
-			name:                    "object is a full-snapshot lease, but holder identity is not changed",
-			isObjectLease:           true,
-			objectName:              "etcd-test-full-snap",
-			isHolderIdentityChanged: false,
-			shouldAllowUpdateEvent:  false,
-		},
-		{
-			name:                    "object is a full-snapshot lease, and holder identity is changed",
-			isObjectLease:           true,
-			objectName:              "etcd-test-full-snap",
-			isHolderIdentityChanged: true,
-			shouldAllowUpdateEvent:  true,
-		},
-	}
-
-	g := NewWithT(t)
-	t.Parallel()
-	predicate := snapshotRevisionChanged()
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			obj, oldObj := createObjectsForSnapshotLeasePredicate(g, test.objectName, test.isObjectLease, false, true, test.isHolderIdentityChanged)
-			g.Expect(predicate.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: obj})).To(Equal(test.shouldAllowUpdateEvent))
-		})
-	}
-}
-
-func TestSnapshotRevisionChangedForDeleteEvents(t *testing.T) {
-	g := NewWithT(t)
-	t.Parallel()
-	predicate := snapshotRevisionChanged()
-	obj, _ := createObjectsForSnapshotLeasePredicate(g, "etcd-test-delta-snap", true, true, true, true)
-	g.Expect(predicate.Delete(event.DeleteEvent{Object: obj})).To(BeFalse())
-}
-
-func TestSnapshotRevisionChangedForGenericEvents(t *testing.T) {
-	g := NewWithT(t)
-	t.Parallel()
-	predicate := snapshotRevisionChanged()
-	obj, _ := createObjectsForSnapshotLeasePredicate(g, "etcd-test-delta-snap", true, true, true, true)
-	g.Expect(predicate.Generic(event.GenericEvent{Object: obj})).To(BeFalse())
 }
 
 func TestJobStatusChangedForUpdateEvents(t *testing.T) {
@@ -285,49 +256,6 @@ func createObjectsForJobStatusChangedPredicate(g *WithT, name string, isJobObj, 
 		obj = oldObj
 	}
 	return
-}
-
-func createObjectsForSnapshotLeasePredicate(g *WithT, name string, isLeaseObj, isNewObject, isHolderIdentitySet, isHolderIdentityChanged bool) (obj client.Object, oldObj client.Object) {
-	// if the object is not a lease object, create a config map (random type chosen, could have been anything else as well).
-	if !isLeaseObj {
-		obj = createConfigMap(g, name)
-		oldObj = createConfigMap(g, name)
-		return
-	}
-
-	// create lease objects
-	var holderIdentity, newHolderIdentity *string
-	// if it's a new object indicating a create event, create a new lease object and return.
-	if isNewObject {
-		if isHolderIdentitySet {
-			holderIdentity = ptr.To(strconv.Itoa(generateRandomInt(g)))
-		}
-		obj = createLease(name, holderIdentity)
-		return
-	}
-
-	// create old and new lease objects.
-	holderIdentity = ptr.To(strconv.Itoa(generateRandomInt(g)))
-	oldObj = createLease(name, holderIdentity)
-	if isHolderIdentityChanged {
-		newHolderIdentity = ptr.To(strconv.Itoa(generateRandomInt(g)))
-	} else {
-		newHolderIdentity = holderIdentity
-	}
-	obj = createLease(name, newHolderIdentity)
-
-	return
-}
-
-func createLease(name string, holderIdentity *string) *coordinationv1.Lease {
-	return &coordinationv1.Lease{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity: holderIdentity,
-		},
-	}
 }
 
 func createConfigMap(g *WithT, name string) *corev1.ConfigMap {

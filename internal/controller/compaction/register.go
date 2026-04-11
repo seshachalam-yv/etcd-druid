@@ -6,17 +6,17 @@ package compaction
 
 import (
 	"reflect"
-	"strings"
 
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 
 	batchv1 "k8s.io/api/batch/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
@@ -31,44 +31,36 @@ func (r *Reconciler) RegisterWithManager(mgr ctrl.Manager) error {
 			MaxConcurrentReconciles: *r.config.ConcurrentSyncs,
 		}).
 		For(&druidv1alpha1.Etcd{}).
-		WithEventFilter(predicate.
-			Or(snapshotRevisionChanged(), compactionJobStatusChanged())).
-		Owns(&coordinationv1.Lease{}).
+		WithEventFilter(compactionJobStatusChanged()).
+		Watches(
+			&druidv1alpha1.EtcdMember{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &druidv1alpha1.Etcd{}),
+			builder.WithPredicates(etcdMemberSnapshotsChanged()),
+		).
 		Owns(&batchv1.Job{}).
 		Complete(r)
 }
 
-// snapshotRevisionChanged is a predicate that is `true` if the passed lease object is a snapshot lease and if the lease
-// object's holderIdentity is updated.
-func snapshotRevisionChanged() predicate.Predicate {
-	isSnapshotLease := func(obj client.Object) bool {
-		lease, ok := obj.(*coordinationv1.Lease)
+// etcdMemberSnapshotsChanged is a predicate that returns true when an EtcdMember's Status.Snapshots section changes.
+func etcdMemberSnapshotsChanged() predicate.Predicate {
+	snapshotsChanged := func(objOld, objNew client.Object) bool {
+		memberOld, ok := objOld.(*druidv1alpha1.EtcdMember)
 		if !ok {
 			return false
 		}
-
-		return strings.HasSuffix(lease.Name, "full-snap") || strings.HasSuffix(lease.Name, "delta-snap")
-	}
-
-	holderIdentityChange := func(objOld, objNew client.Object) bool {
-		leaseOld, ok := objOld.(*coordinationv1.Lease)
+		memberNew, ok := objNew.(*druidv1alpha1.EtcdMember)
 		if !ok {
 			return false
 		}
-		leaseNew, ok := objNew.(*coordinationv1.Lease)
-		if !ok {
-			return false
-		}
-
-		return !reflect.DeepEqual(leaseOld.Spec.HolderIdentity, leaseNew.Spec.HolderIdentity)
+		return !reflect.DeepEqual(memberOld.Status.Snapshots, memberNew.Status.Snapshots)
 	}
 
 	return predicate.Funcs{
-		CreateFunc: func(event event.CreateEvent) bool {
-			return isSnapshotLease(event.Object)
+		CreateFunc: func(_ event.CreateEvent) bool {
+			return false
 		},
-		UpdateFunc: func(event event.UpdateEvent) bool {
-			return isSnapshotLease(event.ObjectNew) && holderIdentityChange(event.ObjectOld, event.ObjectNew)
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return snapshotsChanged(e.ObjectOld, e.ObjectNew)
 		},
 		GenericFunc: func(_ event.GenericEvent) bool {
 			return false
@@ -145,8 +137,8 @@ func compactionJobStatusChanged() predicate.Predicate {
 		CreateFunc: func(_ event.CreateEvent) bool {
 			return false
 		},
-		UpdateFunc: func(event event.UpdateEvent) bool {
-			return isCompactionJob(event.ObjectNew) && statusChange(event.ObjectOld, event.ObjectNew)
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return isCompactionJob(e.ObjectNew) && statusChange(e.ObjectOld, e.ObjectNew)
 		},
 		GenericFunc: func(_ event.GenericEvent) bool {
 			return false
