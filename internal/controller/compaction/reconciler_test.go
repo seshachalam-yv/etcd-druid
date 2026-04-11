@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/utils"
 	testutils "github.com/gardener/etcd-druid/test/utils"
@@ -292,6 +293,7 @@ func TestGetCompactionJobArgs(t *testing.T) {
 	s3Provider := druidv1alpha1.StorageProvider("aws")
 	absProvider := druidv1alpha1.StorageProvider("azure")
 	gcsProvider := druidv1alpha1.StorageProvider("gcp")
+	localProvider := druidv1alpha1.StorageProvider("local")
 
 	tests := []struct {
 		name                        string
@@ -304,6 +306,7 @@ func TestGetCompactionJobArgs(t *testing.T) {
 		storeEndpointOverride       *string
 		etcdDefragTimeout           *metav1.Duration
 		etcdSnapshotTimeout         *metav1.Duration
+		useEtcdSteward              bool
 		expectedArgsContains        []string
 		expectedArgsNotContainFlags []string
 	}{
@@ -411,11 +414,42 @@ func TestGetCompactionJobArgs(t *testing.T) {
 				"--store-endpoint-override",
 			},
 		},
+		{
+			name:              "local provider with UseEtcdSteward uses mount path as store-container",
+			etcdName:          testEtcdName,
+			namespace:         testNamespace,
+			metricsScrapeWait: testMetricsScrape,
+			storeProvider:     &localProvider,
+			storePrefix:       testPrefix,
+			storeContainer:    ptr.To("default.bkp"),
+			useEtcdSteward:    true,
+			// MountPathLocalStore for container="default.bkp" returns "/home/nonroot/default.bkp"
+			expectedArgsContains: []string{
+				"compact",
+				"--storage-provider=Local",
+				"--store-prefix=" + testPrefix,
+				"--store-container=/home/nonroot/default.bkp",
+			},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+			if !tc.useEtcdSteward {
+				t.Parallel()
+			} else {
+				err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+					map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
+				)
+				if err != nil {
+					t.Fatalf("failed to set feature gate: %v", err)
+				}
+				t.Cleanup(func() {
+					_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+						map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+					)
+				})
+			}
 			g := NewWithT(t)
 
 			etcd := &druidv1alpha1.Etcd{

@@ -841,7 +841,16 @@ func getCompactionJobArgs(etcd *druidv1alpha1.Etcd, metricsScrapeWaitDuration st
 		}
 
 		if storeValues.Container != nil {
-			command = append(command, fmt.Sprintf("--store-container=%s", *storeValues.Container))
+			container := *storeValues.Container
+			// For the local provider with etcd-steward, --store-container must be the absolute volume
+			// mount path (e.g. /home/nonroot/default.bkp) — the same path etcd-steward itself uses.
+			// For ebr or cloud providers the raw container name / bucket name is correct.
+			if provider == druidstore.Local && druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+				if mountPath := kubernetes.MountPathLocalStore(etcd, &provider); mountPath != "" {
+					container = mountPath
+				}
+			}
+			command = append(command, fmt.Sprintf("--store-container=%s", container))
 		}
 
 		if storeValues.EndpointOverride != nil {
