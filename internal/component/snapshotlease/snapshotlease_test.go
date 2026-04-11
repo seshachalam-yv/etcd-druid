@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 	"github.com/gardener/etcd-druid/internal/component"
@@ -314,4 +315,55 @@ func doGetLatestLeases(cl client.Client, etcd *druidv1alpha1.Etcd, matchingLabel
 		return nil, err
 	}
 	return leases.Items, nil
+}
+
+// -------------------- UseEtcdSteward feature gate tests --------------------
+
+func TestSnapshotLeaseSync_UseEtcdStewardEnabled(t *testing.T) {
+	g := NewWithT(t)
+	// UseEtcdSteward is a global setting — do not run in parallel
+	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: true},
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+	t.Cleanup(func() {
+		_ = druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+			map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+		)
+	})
+
+	etcd := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).Build()
+	cl := testutils.CreateTestFakeClientForObjects(nil, nil, nil, nil, nil)
+	operator := New(cl)
+	opCtx := component.NewOperatorContext(context.Background(), logr.Discard(), uuid.NewString())
+
+	syncErr := operator.Sync(opCtx, etcd)
+	g.Expect(syncErr).NotTo(HaveOccurred())
+
+	// No snapshot leases should have been created
+	latestSnapshotLeases, listErr := getLatestSnapshotLeases(cl, etcd)
+	g.Expect(listErr).NotTo(HaveOccurred())
+	g.Expect(latestSnapshotLeases).To(BeEmpty())
+}
+
+func TestSnapshotLeaseSync_UseEtcdStewardDisabled(t *testing.T) {
+	g := NewWithT(t)
+	// UseEtcdSteward is a global setting — do not run in parallel
+	err := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(
+		map[string]bool{druidconfigv1alpha1.UseEtcdSteward: false},
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	etcd := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).Build()
+	cl := testutils.CreateTestFakeClientForObjects(nil, nil, nil, nil, nil, getObjectKeys(etcd)...)
+	operator := New(cl)
+	opCtx := component.NewOperatorContext(context.Background(), logr.Discard(), uuid.NewString())
+
+	syncErr := operator.Sync(opCtx, etcd)
+	g.Expect(syncErr).NotTo(HaveOccurred())
+
+	// Snapshot leases SHOULD have been created (backward compat)
+	latestSnapshotLeases, listErr := getLatestSnapshotLeases(cl, etcd)
+	g.Expect(listErr).NotTo(HaveOccurred())
+	g.Expect(latestSnapshotLeases).To(HaveLen(2))
 }

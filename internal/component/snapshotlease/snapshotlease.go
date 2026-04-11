@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	druidapicommon "github.com/gardener/etcd-druid/api/common"
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 	"github.com/gardener/etcd-druid/internal/component"
@@ -81,8 +82,14 @@ func (r _resource) GetExistingResourceNames(ctx component.OperatorContext, etcdO
 func (r _resource) PreSync(_ component.OperatorContext, _ *druidv1alpha1.Etcd) error { return nil }
 
 // Sync creates or updates the snapshot leases for the given Etcd.
+// If UseEtcdSteward feature gate is enabled, snapshot leases are not created
+// because the compaction controller reads EtcdMember.Status.Snapshots instead.
 // If backups are disabled for the Etcd resource, any existing snapshot leases are deleted.
 func (r _resource) Sync(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd) error {
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		ctx.Logger.Info("UseEtcdSteward is enabled, skipping snapshot lease creation")
+		return nil
+	}
 	if !etcd.IsBackupStoreEnabled() {
 		ctx.Logger.Info("Backup has been disabled. Triggering deletion of snapshot leases")
 		return r.deleteAllSnapshotLeases(ctx, etcd.ObjectMeta, func(err error) error {
