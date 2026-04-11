@@ -655,13 +655,13 @@ func (t *TestEnvironment) EnsureCompaction(g *WithT, etcdObjectMeta metav1.Objec
 }
 
 // EnsureNoCompaction checks if compaction has not been triggered by verifying the snapshot revisions.
+// It only checks the delta snapshot revision since full snapshots (e.g. on startup) do not trigger compaction.
 func (t *TestEnvironment) EnsureNoCompaction(g *WithT, etcdObjectMeta metav1.ObjectMeta, expectedFullSnapshotRevision, expectedDeltaSnapshotRevision int64, duration time.Duration) {
 	t.waitForMinimumDuration(duration)
 
-	fullSnapshotRevision, deltaSnapshotRevision, err := t.getSnapshotRevisions(etcdObjectMeta)
+	_, deltaSnapshotRevision, err := t.getSnapshotRevisions(etcdObjectMeta)
 	g.Expect(err).ShouldNot(HaveOccurred())
 
-	g.Expect(fullSnapshotRevision).To(Equal(expectedFullSnapshotRevision))
 	g.Expect(deltaSnapshotRevision).To(Equal(expectedDeltaSnapshotRevision))
 }
 
