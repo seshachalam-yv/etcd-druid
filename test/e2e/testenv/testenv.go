@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"time"
 
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
@@ -30,7 +29,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	batchv1 "k8s.io/api/batch/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -634,16 +632,16 @@ func getSnapshotterJob(g *WithT, etcd *druidv1alpha1.Etcd, snapshotType string) 
 	}
 }
 
-// EnsureCompaction checks if compaction has succeeded by verifying the snapshot revisions.
+// EnsureCompaction checks if compaction has succeeded by polling EtcdMember snapshot revisions.
 func (t *TestEnvironment) EnsureCompaction(g *WithT, etcdObjectMeta metav1.ObjectMeta, expectedFullSnapshotRevision, expectedDeltaSnapshotRevision int64, timeout time.Duration) {
 	g.Eventually(func() error {
-		fullSnapshotRevision, deltaSnapshotRevision, err := t.getSnapshotRevisions(etcdObjectMeta)
+		fullSnapshotRevision, deltaSnapshotRevision, err := t.getSnapshotRevisionsFromEtcdMember(etcdObjectMeta)
 		if err != nil {
 			return err
 		}
 
 		if deltaSnapshotRevision != expectedDeltaSnapshotRevision {
-			return fmt.Errorf("expected delta snapshot revision to be 0, but got %d", deltaSnapshotRevision)
+			return fmt.Errorf("expected delta snapshot revision to be %d, but got %d", expectedDeltaSnapshotRevision, deltaSnapshotRevision)
 		}
 
 		if fullSnapshotRevision != expectedFullSnapshotRevision {
@@ -654,12 +652,12 @@ func (t *TestEnvironment) EnsureCompaction(g *WithT, etcdObjectMeta metav1.Objec
 	}, timeout, defaultPollingInterval).Should(Succeed())
 }
 
-// EnsureNoCompaction checks if compaction has not been triggered by verifying the snapshot revisions.
+// EnsureNoCompaction checks if compaction has not been triggered by verifying the delta snapshot revision on EtcdMember.
 // It only checks the delta snapshot revision since full snapshots (e.g. on startup) do not trigger compaction.
 func (t *TestEnvironment) EnsureNoCompaction(g *WithT, etcdObjectMeta metav1.ObjectMeta, expectedFullSnapshotRevision, expectedDeltaSnapshotRevision int64, duration time.Duration) {
 	t.waitForMinimumDuration(duration)
 
-	_, deltaSnapshotRevision, err := t.getSnapshotRevisions(etcdObjectMeta)
+	_, deltaSnapshotRevision, err := t.getSnapshotRevisionsFromEtcdMember(etcdObjectMeta)
 	g.Expect(err).ShouldNot(HaveOccurred())
 
 	g.Expect(deltaSnapshotRevision).To(Equal(expectedDeltaSnapshotRevision))
@@ -675,41 +673,38 @@ func (t *TestEnvironment) waitForMinimumDuration(minDuration time.Duration) {
 	}
 }
 
-// getSnapshotRevisions fetches the full and delta snapshot revisions from the snapshot leases of the Etcd resource.
-func (t *TestEnvironment) getSnapshotRevisions(etcdObjectMeta metav1.ObjectMeta) (int64, int64, error) {
-	fullSnapshotLease := &coordinationv1.Lease{}
-	deltaSnapshotLease := &coordinationv1.Lease{}
-
-	if err := t.cl.Get(t.ctx, types.NamespacedName{
-		Name:      druidv1alpha1.GetFullSnapshotLeaseName(etcdObjectMeta),
-		Namespace: etcdObjectMeta.Namespace,
-	}, fullSnapshotLease); err != nil {
-		return 0, 0, fmt.Errorf("failed to fetch full snapshot lease: %w", err)
+// getSnapshotRevisionsFromEtcdMember fetches the full and delta snapshot end revisions
+// from EtcdMember.Status.Snapshots for the Etcd resource.
+// Returns (fullEndRevision, deltaEndRevision, error).
+// If no EtcdMember exists or has no snapshot data, revisions are returned as 0.
+func (t *TestEnvironment) getSnapshotRevisionsFromEtcdMember(etcdObjectMeta metav1.ObjectMeta) (int64, int64, error) {
+	memberList := &druidv1alpha1.EtcdMemberList{}
+	selectorLabels := map[string]string{
+		druidv1alpha1.LabelManagedByKey: druidv1alpha1.LabelManagedByValue,
+		druidv1alpha1.LabelPartOfKey:    etcdObjectMeta.Name,
+		druidv1alpha1.LabelComponentKey: common.ComponentNameEtcdMember,
+	}
+	if err := t.cl.List(t.ctx, memberList,
+		client.InNamespace(etcdObjectMeta.Namespace),
+		client.MatchingLabels(selectorLabels),
+	); err != nil {
+		return 0, 0, fmt.Errorf("failed to list EtcdMembers for etcd %s: %w", etcdObjectMeta.Name, err)
 	}
 
-	if err := t.cl.Get(t.ctx, types.NamespacedName{
-		Name:      druidv1alpha1.GetDeltaSnapshotLeaseName(etcdObjectMeta),
-		Namespace: etcdObjectMeta.Namespace,
-	}, deltaSnapshotLease); err != nil {
-		return 0, 0, fmt.Errorf("failed to fetch delta snapshot lease: %w", err)
-	}
-
-	var err error
-	fullSnapshotRevision := int64(0)
-	if fullSnapshotLease.Spec.HolderIdentity != nil {
-		fullSnapshotRevision, err = strconv.ParseInt(*fullSnapshotLease.Spec.HolderIdentity, 10, 64)
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to parse full snapshot revision: %w", err)
+	for _, member := range memberList.Items {
+		snapshots := member.Status.Snapshots
+		if snapshots == nil {
+			continue
 		}
-	}
-
-	deltaSnapshotRevision := int64(0)
-	if deltaSnapshotLease.Spec.HolderIdentity != nil {
-		deltaSnapshotRevision, err = strconv.ParseInt(*deltaSnapshotLease.Spec.HolderIdentity, 10, 64)
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to parse delta snapshot revision: %w", err)
+		fullEndRev := int64(0)
+		if snapshots.LastFull != nil {
+			fullEndRev = snapshots.LastFull.EndRevision
 		}
+		deltaEndRev := int64(0)
+		if snapshots.LastDelta != nil {
+			deltaEndRev = snapshots.LastDelta.EndRevision
+		}
+		return fullEndRev, deltaEndRev, nil
 	}
-
-	return fullSnapshotRevision, deltaSnapshotRevision, nil
+	return 0, 0, nil
 }
