@@ -56,7 +56,7 @@ func (r *clusterIDMismatchCheck) Check(ctx context.Context, etcd druidv1alpha1.E
 				message: fmt.Sprintf("Unable to parse Lease %s holder identity: %s", leaseName, err.Error()),
 			}
 		}
-		if clusterID != nil {
+		if clusterID != nil && *clusterID != "" {
 			memberClusterIDs[leaseName] = *clusterID
 		}
 	}
