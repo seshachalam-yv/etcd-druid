@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 	druidstore "github.com/gardener/etcd-druid/internal/store"
 	"github.com/gardener/etcd-druid/internal/utils"
@@ -190,9 +191,13 @@ func (s StatefulSetMatcher) matchPodInitContainers() gomegatypes.GomegaMatcher {
 }
 
 func (s StatefulSetMatcher) matchContainers() gomegatypes.GomegaMatcher {
+	sidecarName := common.ContainerNameEtcdBackupRestore
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		sidecarName = common.ContainerNameEtcdSteward
+	}
 	return MatchAllElements(containerIdentifier, Elements{
-		common.ContainerNameEtcd:              s.matchEtcdContainer(),
-		common.ContainerNameEtcdBackupRestore: s.matchBackupRestoreContainer(),
+		common.ContainerNameEtcd: s.matchEtcdContainer(),
+		sidecarName:              s.matchBackupRestoreContainer(),
 	})
 }
 
@@ -239,8 +244,12 @@ func (s StatefulSetMatcher) matchEtcdContainerVolMounts() gomegatypes.GomegaMatc
 
 func (s StatefulSetMatcher) matchBackupRestoreContainer() gomegatypes.GomegaMatcher {
 	containerResources := ptr.Deref(s.etcd.Spec.Backup.Resources, defaultTestContainerResources)
+	containerName := common.ContainerNameEtcdBackupRestore
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		containerName = common.ContainerNameEtcdSteward
+	}
 	return MatchFields(IgnoreExtras, Fields{
-		"Name":            Equal("backup-restore"),
+		"Name":            Equal(containerName),
 		"Image":           Equal(s.etcdBRImage),
 		"ImagePullPolicy": Equal(corev1.PullIfNotPresent),
 		// This is quite painful and therefore skipped for now. Independent unit test for command line args should be written instead.

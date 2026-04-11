@@ -467,8 +467,12 @@ func isStatefulSetTLSConfigInSync(etcd *druidv1alpha1.Etcd, existingSts *appsv1.
 	newEtcdbrTLSVolMounts := getBackupRestoreContainerSecretVolumeMounts(etcd)
 	newEtcdWrapperTLSVolMounts := getEtcdContainerSecretVolumeMounts(etcd)
 	containerTLSVolMounts := kubernetes.GetStatefulSetContainerTLSVolumeMounts(existingSts)
+	sidecarContainerName := common.ContainerNameEtcdBackupRestore
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		sidecarContainerName = common.ContainerNameEtcdSteward
+	}
 	return !hasTLSVolumeMountsChanged(containerTLSVolMounts[common.ContainerNameEtcd], newEtcdWrapperTLSVolMounts) &&
-		!hasTLSVolumeMountsChanged(containerTLSVolMounts[common.ContainerNameEtcdBackupRestore], newEtcdbrTLSVolMounts)
+		!hasTLSVolumeMountsChanged(containerTLSVolMounts[sidecarContainerName], newEtcdbrTLSVolMounts)
 }
 
 func hasTLSVolumeMountsChanged(existingVolMounts, newVolMounts []corev1.VolumeMount) bool {

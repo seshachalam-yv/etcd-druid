@@ -403,11 +403,13 @@ func (b *stsBuilder) getBackupRestoreContainer() (corev1.Container, error) {
 	env = append(env, providerEnv...)
 
 	pullPolicy := corev1.PullIfNotPresent
+	containerName := common.ContainerNameEtcdBackupRestore
 	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
 		pullPolicy = corev1.PullAlways
+		containerName = common.ContainerNameEtcdSteward
 	}
 	return corev1.Container{
-		Name:            common.ContainerNameEtcdBackupRestore,
+		Name:            containerName,
 		Image:           b.etcdBackupRestoreImage,
 		ImagePullPolicy: pullPolicy,
 		Args:            b.getBackupRestoreContainerCommandArgs(),
@@ -471,7 +473,7 @@ func (b *stsBuilder) getStewardContainerCommandArgs() []string {
 	}
 	commandArgs = append(commandArgs, fmt.Sprintf("--auto-compaction-retention=%s", compactionRetention))
 
-	// Client TLS — etcd-steward does not use --insecure-* or --service-endpoints
+	// Client TLS — etcd-steward does not use --insecure-* but does use --service-endpoints
 	// -----------------------------------------------------------------------------------------------------------------
 	if b.etcd.Spec.Etcd.ClientUrlTLS != nil {
 		dataKey := ptr.Deref(b.etcd.Spec.Etcd.ClientUrlTLS.TLSCASecretRef.DataKey, "ca.crt")
@@ -479,8 +481,10 @@ func (b *stsBuilder) getStewardContainerCommandArgs() []string {
 		commandArgs = append(commandArgs, fmt.Sprintf("--cert=%s/tls.crt", common.VolumeMountPathEtcdClientTLS))
 		commandArgs = append(commandArgs, fmt.Sprintf("--key=%s/tls.key", common.VolumeMountPathEtcdClientTLS))
 		commandArgs = append(commandArgs, fmt.Sprintf("--endpoints=https://%s-local:%d", b.etcd.Name, b.clientPort))
+		commandArgs = append(commandArgs, fmt.Sprintf("--service-endpoints=https://%s:%d", druidv1alpha1.GetClientServiceName(b.etcd.ObjectMeta), b.clientPort))
 	} else {
 		commandArgs = append(commandArgs, fmt.Sprintf("--endpoints=http://%s-local:%d", b.etcd.Name, b.clientPort))
+		commandArgs = append(commandArgs, fmt.Sprintf("--service-endpoints=http://%s:%d", druidv1alpha1.GetClientServiceName(b.etcd.ObjectMeta), b.clientPort))
 	}
 	if b.etcd.Spec.Backup.TLS != nil {
 		commandArgs = append(commandArgs, fmt.Sprintf("--server-cert=%s/tls.crt", common.VolumeMountPathBackupRestoreServerTLS))

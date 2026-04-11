@@ -43,6 +43,8 @@ const (
 	ContainerNameEtcd = "etcd"
 	// ContainerNameEtcdBackupRestore is the name of the backup-restore container.
 	ContainerNameEtcdBackupRestore = "backup-restore"
+	// ContainerNameEtcdSteward is the name of the etcd-steward sidecar container.
+	ContainerNameEtcdSteward = "etcd-steward"
 	// InitContainerNameChangePermissions is the name of the change permissions init container.
 	InitContainerNameChangePermissions = "change-permissions"
 	// InitContainerNameChangeBackupBucketPermissions is the name of the change backup bucket permissions init container.

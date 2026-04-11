@@ -83,6 +83,7 @@ func TestBackupRestoreContainerCommandArgs(t *testing.T) {
 				"--listen-peer-urls=",
 				"--listen-client-urls=",
 				fmt.Sprintf("--data-dir=%s/new.etcd", common.VolumeMountPathEtcdData),
+				"--service-endpoints=",
 			},
 			mustNotContain: []string{
 				"--defragmentation-schedule=",
@@ -90,7 +91,6 @@ func TestBackupRestoreContainerCommandArgs(t *testing.T) {
 				"--embedded-etcd-quota-bytes=",
 				"--insecure-transport=",
 				"--insecure-skip-tls-verify=",
-				"--service-endpoints=",
 				"--etcd-connection-timeout-leader-election=",
 			},
 		},
