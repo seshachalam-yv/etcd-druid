@@ -315,9 +315,9 @@ func (r *Reconciler) delete(ctx context.Context, logger logr.Logger, etcd *druid
 func (r *Reconciler) getDeltaRevisionFromEtcdMember(ctx context.Context, logger logr.Logger, etcd *druidv1alpha1.Etcd) (int64, error) {
 	memberList := &druidv1alpha1.EtcdMemberList{}
 	selectorLabels := map[string]string{
-		druidv1alpha1.LabelManagedByKey:  druidv1alpha1.LabelManagedByValue,
-		druidv1alpha1.LabelPartOfKey:     etcd.Name,
-		druidv1alpha1.LabelComponentKey:  "etcd-member",
+		druidv1alpha1.LabelManagedByKey: druidv1alpha1.LabelManagedByValue,
+		druidv1alpha1.LabelPartOfKey:    etcd.Name,
+		druidv1alpha1.LabelComponentKey: "etcd-member",
 	}
 	if err := r.List(ctx, memberList, client.InNamespace(etcd.Namespace), client.MatchingLabels(selectorLabels)); err != nil {
 		logger.Error(err, "Couldn't list EtcdMembers for etcd", "etcdName", etcd.Name)
