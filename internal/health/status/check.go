@@ -69,6 +69,13 @@ func (c *Checker) Check(ctx context.Context, logger logr.Logger, etcd *druidv1al
 	return c.executeConditionChecks(ctx, etcd)
 }
 
+// ExecuteConditionChecks runs only the condition checks (not the member checks) and mutates the
+// passed etcd object's conditions. This is used when member status is populated from EtcdMember
+// resources (UseEtcdSteward) instead of from member leases.
+func (c *Checker) ExecuteConditionChecks(ctx context.Context, etcd *druidv1alpha1.Etcd) error {
+	return c.executeConditionChecks(ctx, etcd)
+}
+
 // executeConditionChecks runs all registered condition checks **in parallel**.
 func (c *Checker) executeConditionChecks(ctx context.Context, etcd *druidv1alpha1.Etcd) error {
 	var (

@@ -311,7 +311,55 @@ func (r *Reconciler) delete(ctx context.Context, logger logr.Logger, etcd *druid
 }
 
 // getDeltaRevisionsSinceFullSnapshot retrieves the difference between the full and delta snapshot revisions for the given Etcd resource.
+// When UseEtcdSteward is enabled, it reads snapshot revision info from EtcdMember.Status.Snapshots
+// instead of snapshot leases.
 func (r *Reconciler) getDeltaRevisionsSinceFullSnapshot(ctx context.Context, logger logr.Logger, etcd *druidv1alpha1.Etcd) (int64, error) {
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		return r.getDeltaRevisionsSinceFullSnapshotFromEtcdMembers(ctx, logger, etcd)
+	}
+	return r.getDeltaRevisionsSinceFullSnapshotFromLeases(ctx, logger, etcd)
+}
+
+// getDeltaRevisionsSinceFullSnapshotFromEtcdMembers reads snapshot revision information from EtcdMember resources.
+// It finds the EtcdMember that has snapshot information (the leader's backup sidecar) and computes the
+// delta revisions since the last full snapshot.
+func (r *Reconciler) getDeltaRevisionsSinceFullSnapshotFromEtcdMembers(ctx context.Context, logger logr.Logger, etcd *druidv1alpha1.Etcd) (int64, error) {
+	memberList := &druidv1alpha1.EtcdMemberList{}
+	if err := r.List(ctx, memberList,
+		client.InNamespace(etcd.Namespace),
+		client.MatchingLabels(druidv1alpha1.GetDefaultLabels(etcd.ObjectMeta)),
+	); err != nil {
+		logger.Error(err, "Error listing EtcdMember resources for snapshot revision info")
+		return 0, fmt.Errorf("error listing EtcdMember resources: %w", err)
+	}
+
+	// Find the EtcdMember with snapshot information. Only the leader's backup sidecar takes snapshots,
+	// so typically only one EtcdMember will have Snapshots populated.
+	for _, em := range memberList.Items {
+		if em.Status.Snapshots == nil {
+			continue
+		}
+		snapshots := em.Status.Snapshots
+		if snapshots.LastFull == nil || snapshots.LastFull.EndRevision == nil {
+			continue
+		}
+		fullRevision := *snapshots.LastFull.EndRevision
+
+		if snapshots.LastDelta == nil || snapshots.LastDelta.EndRevision == nil {
+			// No delta snapshot yet since the last full snapshot -- zero delta revisions.
+			return 0, nil
+		}
+		deltaRevision := *snapshots.LastDelta.EndRevision
+
+		return deltaRevision - fullRevision, nil
+	}
+
+	return 0, fmt.Errorf("no EtcdMember resource with snapshot information found for etcd %s/%s", etcd.Namespace, etcd.Name)
+}
+
+// getDeltaRevisionsSinceFullSnapshotFromLeases retrieves the difference between the full and delta snapshot revisions
+// from snapshot leases. This is the legacy path used when UseEtcdSteward is not enabled.
+func (r *Reconciler) getDeltaRevisionsSinceFullSnapshotFromLeases(ctx context.Context, logger logr.Logger, etcd *druidv1alpha1.Etcd) (int64, error) {
 	// Get full and delta snapshot lease to check the HolderIdentity value to take decision on compaction job
 	fullLease := &coordinationv1.Lease{}
 	fullSnapshotLeaseName := druidv1alpha1.GetFullSnapshotLeaseName(etcd.ObjectMeta)

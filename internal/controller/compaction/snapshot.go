@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 	druidmetrics "github.com/gardener/etcd-druid/internal/metrics"
@@ -114,7 +115,8 @@ func newHTTPClient(ctx context.Context, cl client.Client, etcd *druidv1alpha1.Et
 	return httpClient, httpScheme, nil
 }
 
-// fullSnapshot makes an HTTP GET request to the etcd client service for a full snapshot.
+// fullSnapshot makes an HTTP request to the etcd client service for a full snapshot.
+// When UseEtcdSteward is enabled, it uses POST (steward API). Otherwise, it uses GET (etcd-backup-restore API).
 func fullSnapshot(ctx context.Context, etcd *druidv1alpha1.Etcd, httpClient httpClientInterface, httpScheme string) error {
 	fullSnapshotURL := fmt.Sprintf(
 		"%s://%s.%s.svc.cluster.local:%d/snapshot/full",
@@ -123,7 +125,11 @@ func fullSnapshot(ctx context.Context, etcd *druidv1alpha1.Etcd, httpClient http
 		etcd.Namespace,
 		ptr.Deref(etcd.Spec.Backup.Port, common.DefaultPortEtcdBackupRestore),
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullSnapshotURL, nil)
+	httpMethod := http.MethodGet
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		httpMethod = http.MethodPost
+	}
+	req, err := http.NewRequestWithContext(ctx, httpMethod, fullSnapshotURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request for full snapshot: %w", err)
 	}

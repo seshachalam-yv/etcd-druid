@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -24,7 +25,7 @@ const controllerName = "compaction-controller"
 
 // RegisterWithManager registers the Compaction Controller with the given controller manager.
 func (r *Reconciler) RegisterWithManager(mgr ctrl.Manager) error {
-	return ctrl.
+	builder := ctrl.
 		NewControllerManagedBy(mgr).
 		Named(controllerName).
 		WithOptions(controller.Options{
@@ -32,10 +33,15 @@ func (r *Reconciler) RegisterWithManager(mgr ctrl.Manager) error {
 		}).
 		For(&druidv1alpha1.Etcd{}).
 		WithEventFilter(predicate.
-			Or(snapshotRevisionChanged(), compactionJobStatusChanged())).
+			Or(snapshotRevisionChanged(), compactionJobStatusChanged(), etcdMemberSnapshotChanged())).
 		Owns(&coordinationv1.Lease{}).
-		Owns(&batchv1.Job{}).
-		Complete(r)
+		Owns(&batchv1.Job{})
+
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		builder = builder.Owns(&druidv1alpha1.EtcdMember{})
+	}
+
+	return builder.Complete(r)
 }
 
 // snapshotRevisionChanged is a predicate that is `true` if the passed lease object is a snapshot lease and if the lease
@@ -147,6 +153,44 @@ func compactionJobStatusChanged() predicate.Predicate {
 		},
 		UpdateFunc: func(event event.UpdateEvent) bool {
 			return isCompactionJob(event.ObjectNew) && statusChange(event.ObjectOld, event.ObjectNew)
+		},
+		GenericFunc: func(_ event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(_ event.DeleteEvent) bool {
+			return false
+		},
+	}
+}
+
+// etcdMemberSnapshotChanged is a predicate that is `true` if the passed object is an EtcdMember
+// and its Status.Snapshots has changed. This is used when UseEtcdSteward is enabled to trigger
+// compaction based on EtcdMember snapshot status instead of snapshot leases.
+func etcdMemberSnapshotChanged() predicate.Predicate {
+	isEtcdMember := func(obj client.Object) bool {
+		_, ok := obj.(*druidv1alpha1.EtcdMember)
+		return ok
+	}
+
+	snapshotStatusChange := func(objOld, objNew client.Object) bool {
+		emOld, ok := objOld.(*druidv1alpha1.EtcdMember)
+		if !ok {
+			return false
+		}
+		emNew, ok := objNew.(*druidv1alpha1.EtcdMember)
+		if !ok {
+			return false
+		}
+
+		return !reflect.DeepEqual(emOld.Status.Snapshots, emNew.Status.Snapshots)
+	}
+
+	return predicate.Funcs{
+		CreateFunc: func(event event.CreateEvent) bool {
+			return isEtcdMember(event.Object)
+		},
+		UpdateFunc: func(event event.UpdateEvent) bool {
+			return isEtcdMember(event.ObjectNew) && snapshotStatusChange(event.ObjectOld, event.ObjectNew)
 		},
 		GenericFunc: func(_ event.GenericEvent) bool {
 			return false

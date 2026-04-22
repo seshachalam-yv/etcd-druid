@@ -9,6 +9,7 @@ import (
 	"time"
 
 	druidapicommon "github.com/gardener/etcd-druid/api/common"
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/component"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
@@ -207,8 +208,15 @@ func (r *Reconciler) getOrderedOperatorsForSync(etcdObjMeta metav1.ObjectMeta) [
 	// add the rest of the operators that are always needed for the etcd cluster
 	operators = append(operators,
 		component.ConfigMapKind,
-		component.StatefulSetKind,
 	)
+
+	// When UseEtcdSteward is enabled, sync EtcdMember resources before the StatefulSet
+	// so that member resources exist before pods are created.
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		operators = append(operators, component.EtcdMemberKind)
+	}
+
+	operators = append(operators, component.StatefulSetKind)
 
 	return operators
 }
@@ -217,7 +225,7 @@ func (r *Reconciler) getOperatorsForCleanup(etcdObjMeta metav1.ObjectMeta) []com
 	if druidv1alpha1.IsEtcdRuntimeComponentCreationEnabled(etcdObjMeta) {
 		return nil
 	}
-	return []component.Kind{
+	operators := []component.Kind{
 		component.ServiceAccountKind,
 		component.RoleKind,
 		component.RoleBindingKind,
@@ -227,4 +235,8 @@ func (r *Reconciler) getOperatorsForCleanup(etcdObjMeta metav1.ObjectMeta) []com
 		component.ClientServiceKind,
 		component.PeerServiceKind,
 	}
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		operators = append(operators, component.EtcdMemberKind)
+	}
+	return operators
 }

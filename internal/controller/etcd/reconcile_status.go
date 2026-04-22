@@ -5,6 +5,7 @@
 package etcd
 
 import (
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/component"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
@@ -47,11 +48,95 @@ func (r *Reconciler) reconcileStatus(ctx component.OperatorContext, etcd *druidv
 }
 
 func (r *Reconciler) mutateETCDStatusWithMemberStatusAndConditions(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, logger logr.Logger) ctrlutils.ReconcileStepResult {
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		return r.mutateETCDStatusFromEtcdMembers(ctx, etcd, logger)
+	}
 	statusCheck := status.NewChecker(r.client, r.config.EtcdMember.NotReadyThreshold.Duration, r.config.EtcdMember.UnknownThreshold.Duration)
 	if err := statusCheck.Check(ctx, logger, etcd); err != nil {
 		logger.Error(err, "Error executing status checks to update member status and conditions")
 		return ctrlutils.ReconcileWithError(err)
 	}
+	return ctrlutils.ContinueReconcile()
+}
+
+// mutateETCDStatusFromEtcdMembers populates Etcd.Status.Members from EtcdMember custom resources
+// instead of member leases. This is used when UseEtcdSteward feature gate is enabled.
+func (r *Reconciler) mutateETCDStatusFromEtcdMembers(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, logger logr.Logger) ctrlutils.ReconcileStepResult {
+	memberList := &druidv1alpha1.EtcdMemberList{}
+	if err := r.client.List(ctx, memberList,
+		client.InNamespace(etcd.Namespace),
+		client.MatchingLabels(druidv1alpha1.GetDefaultLabels(etcd.ObjectMeta)),
+	); err != nil {
+		logger.Error(err, "Error listing EtcdMember resources for status update")
+		return ctrlutils.ReconcileWithError(err)
+	}
+
+	members := make([]druidv1alpha1.EtcdMemberStatus, 0, len(memberList.Items))
+	for _, em := range memberList.Items {
+		if !metav1.IsControlledBy(&em, etcd) {
+			continue
+		}
+		memberStatus := druidv1alpha1.EtcdMemberStatus{
+			Name: em.Name,
+			ID:   em.Status.ID,
+		}
+
+		// Map EtcdMember state/substate to EtcdMemberConditionStatus and Role.
+		if em.Status.State != nil {
+			switch *em.Status.State {
+			case druidv1alpha1.MemberStateStarted:
+				memberStatus.Status = druidv1alpha1.EtcdMemberStatusReady
+				memberStatus.Reason = "MemberStarted"
+				if em.Status.SubState != nil {
+					switch *em.Status.SubState {
+					case druidv1alpha1.MemberSubStateLeader:
+						role := druidv1alpha1.EtcdRoleLeader
+						memberStatus.Role = &role
+					case druidv1alpha1.MemberSubStateFollower:
+						role := druidv1alpha1.EtcdRoleMember
+						memberStatus.Role = &role
+					}
+				}
+			case druidv1alpha1.MemberStateStarting:
+				memberStatus.Status = druidv1alpha1.EtcdMemberStatusNotReady
+				memberStatus.Reason = "MemberStarting"
+			case druidv1alpha1.MemberStateInitializing:
+				memberStatus.Status = druidv1alpha1.EtcdMemberStatusNotReady
+				memberStatus.Reason = "MemberInitializing"
+			case druidv1alpha1.MemberStateNew:
+				memberStatus.Status = druidv1alpha1.EtcdMemberStatusUnknown
+				memberStatus.Reason = "MemberNew"
+			default:
+				memberStatus.Status = druidv1alpha1.EtcdMemberStatusUnknown
+				memberStatus.Reason = "UnknownState"
+			}
+		} else {
+			memberStatus.Status = druidv1alpha1.EtcdMemberStatusUnknown
+			memberStatus.Reason = "StateNotReported"
+		}
+
+		// Preserve LastTransitionTime from old status if status didn't change
+		for _, oldMember := range etcd.Status.Members {
+			if oldMember.Name == memberStatus.Name && oldMember.Status == memberStatus.Status {
+				memberStatus.LastTransitionTime = oldMember.LastTransitionTime
+				break
+			}
+		}
+		if memberStatus.LastTransitionTime.IsZero() {
+			memberStatus.LastTransitionTime = metav1.Now()
+		}
+
+		members = append(members, memberStatus)
+	}
+	etcd.Status.Members = members
+
+	// Still run condition checks using the legacy checker, which reads the now-populated etcd.Status.Members.
+	statusCheck := status.NewChecker(r.client, r.config.EtcdMember.NotReadyThreshold.Duration, r.config.EtcdMember.UnknownThreshold.Duration)
+	if err := statusCheck.ExecuteConditionChecks(ctx, etcd); err != nil {
+		logger.Error(err, "Error executing condition checks")
+		return ctrlutils.ReconcileWithError(err)
+	}
+
 	return ctrlutils.ContinueReconcile()
 }
 
