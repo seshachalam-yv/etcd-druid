@@ -28,6 +28,8 @@ const (
 	ImageKeyEtcdBackupRestoreDistroless = "etcd-backup-restore-distroless"
 	// ImageKeyAlpine is the key for the alpine image in the image vector.
 	ImageKeyAlpine = "alpine"
+	// ImageKeyEtcdSteward is the key for the etcd-steward image in the image vector.
+	ImageKeyEtcdSteward = "etcd-steward"
 	// ImageKeyEtcdWrapperNext is the key for the next etcd-wrapper image (etcd 3.5) in the image vector.
 	ImageKeyEtcdWrapperNext = "etcd-wrapper-next"
 	// ImageKeyEtcdBackupRestoreNext is the key for the next etcd-backup-restore image (etcd 3.5) in the image vector.

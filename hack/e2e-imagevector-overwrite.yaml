@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Gardener contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+images:
+- name: etcd-wrapper
+  sourceRepository: github.com/gardener/etcd-wrapper
+  repository: europe-docker.pkg.dev/gardener-project/public/gardener/etcd-wrapper
+  tag: "v0.6.2"
+- name: etcd-steward
+  sourceRepository: github.com/gardener/etcd-steward
+  repository: localhost:5001/etcd-steward
+  tag: "latest"
+- name: alpine
+  repository: europe-docker.pkg.dev/gardener-project/public/3rd/alpine
+  tag: "3.21.3"

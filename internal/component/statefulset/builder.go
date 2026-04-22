@@ -7,6 +7,7 @@ package statefulset
 import (
 	"fmt"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 	"github.com/gardener/etcd-druid/internal/component"
@@ -400,11 +401,18 @@ func (b *stsBuilder) getBackupRestoreContainer() (corev1.Container, error) {
 	}
 	env = append(env, providerEnv...)
 
+	var args []string
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		args = b.getStewardContainerCommandArgs()
+	} else {
+		args = b.getBackupRestoreContainerCommandArgs()
+	}
+
 	return corev1.Container{
 		Name:            common.ContainerNameEtcdBackupRestore,
 		Image:           b.etcdBackupRestoreImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Args:            b.getBackupRestoreContainerCommandArgs(),
+		Args:            args,
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          serverPortName,
@@ -419,6 +427,57 @@ func (b *stsBuilder) getBackupRestoreContainer() (corev1.Container, error) {
 		},
 		VolumeMounts: b.getBackupRestoreContainerVolumeMounts(),
 	}, nil
+}
+
+func (b *stsBuilder) getStewardContainerCommandArgs() []string {
+	commandArgs := []string{
+		fmt.Sprintf("--pod-name=$(%s)", common.EnvPodName),
+		fmt.Sprintf("--pod-namespace=$(%s)", common.EnvPodNamespace),
+		fmt.Sprintf("--server-port=%d", b.backupPort),
+		fmt.Sprintf("--data-dir=%s/new.etcd", common.VolumeMountPathEtcdData),
+	}
+
+	// Etcd endpoints (TLS-aware)
+	if b.etcd.Spec.Etcd.ClientUrlTLS != nil {
+		commandArgs = append(commandArgs, fmt.Sprintf("--etcd-endpoints=https://%s-local:%d", b.etcd.Name, b.clientPort))
+		dataKey := ptr.Deref(b.etcd.Spec.Etcd.ClientUrlTLS.TLSCASecretRef.DataKey, "ca.crt")
+		commandArgs = append(commandArgs, fmt.Sprintf("--ca-cert=%s/%s", common.VolumeMountPathEtcdCA, dataKey))
+		commandArgs = append(commandArgs, fmt.Sprintf("--cert=%s/tls.crt", common.VolumeMountPathEtcdClientTLS))
+		commandArgs = append(commandArgs, fmt.Sprintf("--key=%s/tls.key", common.VolumeMountPathEtcdClientTLS))
+	} else {
+		commandArgs = append(commandArgs, fmt.Sprintf("--etcd-endpoints=http://%s-local:%d", b.etcd.Name, b.clientPort))
+	}
+
+	// Member lease renewal
+	if druidv1alpha1.IsEtcdRuntimeComponentCreationEnabled(b.etcd.ObjectMeta) {
+		commandArgs = append(commandArgs, "--enable-member-lease-renewal=true")
+		heartbeatDuration := defaultHeartbeatDuration
+		if b.etcd.Spec.Etcd.HeartbeatDuration != nil {
+			heartbeatDuration = b.etcd.Spec.Etcd.HeartbeatDuration.Duration.String()
+		}
+		commandArgs = append(commandArgs, fmt.Sprintf("--k8s-heartbeat-duration=%s", heartbeatDuration))
+	}
+
+	// Snapshotter
+	commandArgs = append(commandArgs, fmt.Sprintf("--enable-snapshotter=%t", b.etcd.IsBackupStoreEnabled()))
+
+	// Snapshot lease renewal
+	if b.etcd.IsBackupStoreEnabled() && druidv1alpha1.IsEtcdRuntimeComponentCreationEnabled(b.etcd.ObjectMeta) {
+		commandArgs = append(commandArgs, "--enable-snapshot-lease-renewal=true")
+		commandArgs = append(commandArgs, fmt.Sprintf("--full-snapshot-lease-name=%s", druidv1alpha1.GetFullSnapshotLeaseName(b.etcd.ObjectMeta)))
+		commandArgs = append(commandArgs, fmt.Sprintf("--delta-snapshot-lease-name=%s", druidv1alpha1.GetDeltaSnapshotLeaseName(b.etcd.ObjectMeta)))
+	}
+
+	// Defrag
+	commandArgs = append(commandArgs, "--enable-defrag=false")
+
+	// Alarm handler
+	commandArgs = append(commandArgs, "--enable-alarm-handler=true")
+
+	// GC
+	commandArgs = append(commandArgs, "--enable-gc=false")
+
+	return commandArgs
 }
 
 func (b *stsBuilder) getBackupRestoreContainerCommandArgs() []string {
@@ -597,6 +656,16 @@ func (b *stsBuilder) getEtcdContainerReadinessProbe() *corev1.Probe {
 }
 
 func (b *stsBuilder) getEtcdContainerReadinessHandler() corev1.ProbeHandler {
+	if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UseEtcdSteward) {
+		return corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/healthz",
+				Port:   intstr.FromInt32(b.backupPort),
+				Scheme: corev1.URISchemeHTTP,
+			},
+		}
+	}
+
 	scheme := utils.IfConditionOr(b.etcd.Spec.Backup.TLS == nil, corev1.URISchemeHTTP, corev1.URISchemeHTTPS)
 
 	return corev1.ProbeHandler{
