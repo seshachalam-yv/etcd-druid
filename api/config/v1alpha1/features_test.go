@@ -64,13 +64,18 @@ func TestDefaultFeatureGate(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
 			t.Parallel()
-			err := DefaultFeatureGates.SetEnabledFeaturesFromMap(test.enabledFeatures)
+			// Use a fresh featureGate per subtest to avoid concurrent map writes on the global DefaultFeatureGates.
+			fg := newFeatureGate()
+			fg.knownFeatures[UseEtcdWrapper] = maturityLevelSpecGA
+			fg.knownFeatures[UpgradeEtcdVersion] = maturityLevelSpecAlpha
+			fg.knownFeatures[UseEtcdSteward] = maturityLevelSpecAlpha
+			err := fg.SetEnabledFeaturesFromMap(test.enabledFeatures)
 			if test.expectedError {
 				g.Expect(err).ToNot(BeNil())
 			} else {
 				g.Expect(err).To(BeNil())
 				for feature, expected := range test.expectedEnabledFeatures {
-					g.Expect(DefaultFeatureGates.IsEnabled(feature)).To(Equal(expected))
+					g.Expect(fg.IsEnabled(feature)).To(Equal(expected))
 				}
 			}
 		})

@@ -17,6 +17,7 @@ type DruidV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	EtcdsGetter
 	EtcdCopyBackupsTasksGetter
+	EtcdMembersGetter
 	EtcdOpsTasksGetter
 }
 
@@ -31,6 +32,10 @@ func (c *DruidV1alpha1Client) Etcds(namespace string) EtcdInterface {
 
 func (c *DruidV1alpha1Client) EtcdCopyBackupsTasks(namespace string) EtcdCopyBackupsTaskInterface {
 	return newEtcdCopyBackupsTasks(c, namespace)
+}
+
+func (c *DruidV1alpha1Client) EtcdMembers(namespace string) EtcdMemberInterface {
+	return newEtcdMembers(c, namespace)
 }
 
 func (c *DruidV1alpha1Client) EtcdOpsTasks(namespace string) EtcdOpsTaskInterface {

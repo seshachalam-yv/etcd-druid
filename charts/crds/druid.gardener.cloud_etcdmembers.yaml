@@ -3,10 +3,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: (unknown)
+    controller-gen.kubebuilder.io/version: v0.19.0
   name: etcdmembers.druid.gardener.cloud
-  labels:
-    app.kubernetes.io/name: etcd-druid
 spec:
   group: druid.gardener.cloud
   names:
@@ -18,34 +16,354 @@ spec:
     singular: etcdmember
   scope: Namespaced
   versions:
-  - name: v1alpha1
-    served: true
-    storage: true
-    subresources:
-      status: {}
-    additionalPrinterColumns:
-    - name: State
+  - additionalPrinterColumns:
+    - jsonPath: .status.state
+      name: State
       type: string
-      jsonPath: .status.state
-    - name: SubState
+    - jsonPath: .status.subState
+      name: SubState
       type: string
-      jsonPath: .status.subState
-    - name: MemberID
+    - jsonPath: .status.id
+      name: MemberID
       type: string
-      jsonPath: .status.id
-    - name: Age
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
       type: date
-      jsonPath: .metadata.creationTimestamp
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        type: object
+        description: |-
+          EtcdMember represents a single member of an etcd cluster.
+          It captures the state and operational information of an individual etcd member,
+          enabling etcd-druid to perform informed orchestration and remediation.
         properties:
           apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
           status:
+            description: |-
+              EtcdMemberResourceStatus defines the observed state of an EtcdMember resource.
+              All fields are updated exclusively by the corresponding etcd member (backup-sidecar/etcd-steward);
+              etcd-druid only reads this information.
+              NOTE: This type is named EtcdMemberResourceStatus to avoid collision with the legacy
+              EtcdMemberStatus type in etcd.go (used in Etcd.Status.Members). When the legacy type
+              is removed, this can be renamed back to EtcdMemberStatus.
+            properties:
+              clusterID:
+                description: |-
+                  ClusterID is the etcd cluster ID this member belongs to.
+                  In a well-formed cluster, all members share the same ClusterID.
+                type: string
+              conditions:
+                description: Conditions represents the latest available observations
+                  of the member's current state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              dbSize:
+                description: DBSize is the total size of the etcd database in bytes,
+                  including free pages.
+                format: int64
+                type: integer
+              dbSizeInUse:
+                description: |-
+                  DBSizeInUse is the logical size of the etcd database in use (excluding free pages).
+                  The difference (DBSize - DBSizeInUse) indicates how much space can be reclaimed by defragmentation.
+                format: int64
+                type: integer
+              id:
+                description: ID is the unique etcd member ID assigned by the etcd
+                  cluster.
+                type: string
+              lastDefragmentation:
+                description: LastDefragmentation captures information about the last
+                  defragmentation operation performed on this member.
+                properties:
+                  endTime:
+                    description: EndTime is the time at which the defragmentation
+                      ended.
+                    format: date-time
+                    type: string
+                  finalDBSize:
+                    description: FinalDBSize is the size of the etcd DB in bytes after
+                      defragmentation.
+                    format: int64
+                    type: integer
+                  initialDBSize:
+                    description: InitialDBSize is the size of the etcd DB in bytes
+                      prior to defragmentation.
+                    format: int64
+                    type: integer
+                  message:
+                    description: Message is a human-readable message providing additional
+                      context.
+                    type: string
+                  reason:
+                    description: Reason is a machine-readable reason code for the
+                      current status.
+                    type: string
+                  startTime:
+                    description: StartTime is the time at which the defragmentation
+                      started.
+                    format: date-time
+                    type: string
+                  status:
+                    description: Status indicates the current status of the defragmentation
+                      (InProgress, Succeeded, Failed).
+                    enum:
+                    - InProgress
+                    - Succeeded
+                    - Failed
+                    type: string
+                type: object
+              lastRestoration:
+                description: LastRestoration captures information about the last restoration
+                  operation performed by this member.
+                properties:
+                  endTime:
+                    description: EndTime is the time at which the restoration ended.
+                    format: date-time
+                    type: string
+                  message:
+                    description: Message is a human-readable message providing additional
+                      context.
+                    type: string
+                  reason:
+                    description: Reason is a machine-readable reason code for the
+                      current status.
+                    type: string
+                  startTime:
+                    description: StartTime is the time at which the restoration started.
+                    format: date-time
+                    type: string
+                  status:
+                    description: Status indicates the current status of the restoration
+                      (InProgress, Succeeded, Failed).
+                    enum:
+                    - InProgress
+                    - Succeeded
+                    - Failed
+                    type: string
+                  type:
+                    description: Type indicates the type of restoration (FromSnapshot
+                      or FromLeader).
+                    enum:
+                    - FromSnapshot
+                    - FromLeader
+                    type: string
+                type: object
+              peerTLSEnabled:
+                description: PeerTLSEnabled indicates whether TLS is enabled for peer
+                  communication of this member.
+                type: boolean
+              snapshots:
+                description: |-
+                  Snapshots contains information about the latest backup snapshots taken by this member.
+                  Only the leading backup-sidecar (associated with the etcd leader) takes snapshots.
+                properties:
+                  accumulatedDeltaSize:
+                    description: |-
+                      AccumulatedDeltaSize is the total size in bytes of delta snapshots accumulated
+                      since the last full snapshot. This is used by druid to decide when to trigger
+                      snapshot compaction.
+                    format: int64
+                    type: integer
+                  lastDelta:
+                    description: LastDelta captures information about the last delta
+                      snapshot taken.
+                    properties:
+                      endRevision:
+                        description: EndRevision is the end revision of the etcd DB
+                          captured in the snapshot.
+                        format: int64
+                        type: integer
+                      name:
+                        description: Name is the name of the snapshot file that was
+                          uploaded.
+                        type: string
+                      size:
+                        description: Size is the size of the uncompressed snapshot
+                          file in bytes.
+                        format: int64
+                        type: integer
+                      startRevision:
+                        description: StartRevision is the start revision of the etcd
+                          DB captured in the snapshot.
+                        format: int64
+                        type: integer
+                      timestamp:
+                        description: Timestamp is the time at which the snapshot was
+                          taken.
+                        format: date-time
+                        type: string
+                    type: object
+                  lastFull:
+                    description: LastFull captures information about the last full
+                      snapshot taken.
+                    properties:
+                      endRevision:
+                        description: EndRevision is the end revision of the etcd DB
+                          captured in the snapshot.
+                        format: int64
+                        type: integer
+                      name:
+                        description: Name is the name of the snapshot file that was
+                          uploaded.
+                        type: string
+                      size:
+                        description: Size is the size of the uncompressed snapshot
+                          file in bytes.
+                        format: int64
+                        type: integer
+                      startRevision:
+                        description: StartRevision is the start revision of the etcd
+                          DB captured in the snapshot.
+                        format: int64
+                        type: integer
+                      timestamp:
+                        description: Timestamp is the time at which the snapshot was
+                          taken.
+                        format: date-time
+                        type: string
+                    type: object
+                type: object
+              state:
+                description: State is the top-level state of the member (New, Initializing,
+                  Starting, Started).
+                enum:
+                - New
+                - Initializing
+                - Starting
+                - Started
+                type: string
+              subState:
+                description: SubState provides additional detail within a State.
+                enum:
+                - DBValidationSanity
+                - DBValidationFull
+                - Restoration
+                - PendingLearner
+                - Learner
+                - Follower
+                - Leader
+                type: string
+              transitions:
+                description: |-
+                  Transitions records the state transition history of this member.
+                  Entries are appended as the member transitions through different states and sub-states.
+                items:
+                  description: MemberTransition captures a single state transition
+                    in the lifecycle of an etcd member.
+                  properties:
+                    message:
+                      description: Message is a human-readable message providing additional
+                        context for the transition.
+                      type: string
+                    reason:
+                      description: Reason is a machine-readable reason code for the
+                        transition.
+                      type: string
+                    state:
+                      description: State is the top-level state that the member transitioned
+                        to.
+                      enum:
+                      - New
+                      - Initializing
+                      - Starting
+                      - Started
+                      type: string
+                    subState:
+                      description: SubState is the sub-state within the top-level
+                        state, if applicable.
+                      enum:
+                      - DBValidationSanity
+                      - DBValidationFull
+                      - Restoration
+                      - PendingLearner
+                      - Learner
+                      - Follower
+                      - Leader
+                      type: string
+                    transitionTime:
+                      description: TransitionTime is the time at which the transition
+                        occurred.
+                      format: date-time
+                      type: string
+                  required:
+                  - reason
+                  - state
+                  - transitionTime
+                  type: object
+                type: array
             type: object
-            x-kubernetes-preserve-unknown-fields: true
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

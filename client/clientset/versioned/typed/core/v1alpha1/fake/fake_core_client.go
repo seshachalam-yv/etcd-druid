@@ -23,6 +23,10 @@ func (c *FakeDruidV1alpha1) EtcdCopyBackupsTasks(namespace string) v1alpha1.Etcd
 	return newFakeEtcdCopyBackupsTasks(c, namespace)
 }
 
+func (c *FakeDruidV1alpha1) EtcdMembers(namespace string) v1alpha1.EtcdMemberInterface {
+	return newFakeEtcdMembers(c, namespace)
+}
+
 func (c *FakeDruidV1alpha1) EtcdOpsTasks(namespace string) v1alpha1.EtcdOpsTaskInterface {
 	return newFakeEtcdOpsTasks(c, namespace)
 }

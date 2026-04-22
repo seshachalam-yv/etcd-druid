@@ -15,6 +15,8 @@ type Interface interface {
 	Etcds() EtcdInformer
 	// EtcdCopyBackupsTasks returns a EtcdCopyBackupsTaskInformer.
 	EtcdCopyBackupsTasks() EtcdCopyBackupsTaskInformer
+	// EtcdMembers returns a EtcdMemberInformer.
+	EtcdMembers() EtcdMemberInformer
 	// EtcdOpsTasks returns a EtcdOpsTaskInformer.
 	EtcdOpsTasks() EtcdOpsTaskInformer
 }
@@ -38,6 +40,11 @@ func (v *version) Etcds() EtcdInformer {
 // EtcdCopyBackupsTasks returns a EtcdCopyBackupsTaskInformer.
 func (v *version) EtcdCopyBackupsTasks() EtcdCopyBackupsTaskInformer {
 	return &etcdCopyBackupsTaskInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// EtcdMembers returns a EtcdMemberInformer.
+func (v *version) EtcdMembers() EtcdMemberInformer {
+	return &etcdMemberInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // EtcdOpsTasks returns a EtcdOpsTaskInformer.

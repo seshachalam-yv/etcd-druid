@@ -436,6 +436,7 @@ Package v1alpha1 contains API Schema definitions for the druid v1alpha1 API grou
 ### Resource Types
 - [Etcd](#etcd)
 - [EtcdCopyBackupsTask](#etcdcopybackupstask)
+- [EtcdMember](#etcdmember)
 - [EtcdOpsTask](#etcdopstask)
 
 
@@ -737,6 +738,26 @@ _Appears in:_
 | `lastError` _string_ | LastError represents the last occurred error. |  |  |
 
 
+#### EtcdMember
+
+
+
+EtcdMember represents a single member of an etcd cluster.
+It captures the state and operational information of an individual etcd member,
+enabling etcd-druid to perform informed orchestration and remediation.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `druid.gardener.cloud/v1alpha1` | | |
+| `kind` _string_ | `EtcdMember` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `status` _[EtcdMemberResourceStatus](#etcdmemberresourcestatus)_ |  |  |  |
+
+
 #### EtcdMemberConditionStatus
 
 _Underlying type:_ _string_
@@ -753,6 +774,38 @@ _Appears in:_
 | `Ready` | EtcdMemberStatusReady indicates that the etcd member is ready.<br /> |
 | `NotReady` | EtcdMemberStatusNotReady indicates that the etcd member is not ready.<br /> |
 | `Unknown` | EtcdMemberStatusUnknown indicates that the status of the etcd member is unknown.<br /> |
+
+
+#### EtcdMemberResourceStatus
+
+
+
+EtcdMemberResourceStatus defines the observed state of an EtcdMember resource.
+All fields are updated exclusively by the corresponding etcd member (backup-sidecar/etcd-steward);
+etcd-druid only reads this information.
+NOTE: This type is named EtcdMemberResourceStatus to avoid collision with the legacy
+EtcdMemberStatus type in etcd.go (used in Etcd.Status.Members). When the legacy type
+is removed, this can be renamed back to EtcdMemberStatus.
+
+
+
+_Appears in:_
+- [EtcdMember](#etcdmember)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `id` _string_ | ID is the unique etcd member ID assigned by the etcd cluster. |  |  |
+| `clusterID` _string_ | ClusterID is the etcd cluster ID this member belongs to.<br />In a well-formed cluster, all members share the same ClusterID. |  |  |
+| `state` _[MemberState](#memberstate)_ | State is the top-level state of the member (New, Initializing, Starting, Started). |  | Enum: [New Initializing Starting Started] <br /> |
+| `subState` _[MemberSubState](#membersubstate)_ | SubState provides additional detail within a State. |  | Enum: [DBValidationSanity DBValidationFull Restoration PendingLearner Learner Follower Leader] <br /> |
+| `peerTLSEnabled` _boolean_ | PeerTLSEnabled indicates whether TLS is enabled for peer communication of this member. |  |  |
+| `dbSize` _integer_ | DBSize is the total size of the etcd database in bytes, including free pages. |  |  |
+| `dbSizeInUse` _integer_ | DBSizeInUse is the logical size of the etcd database in use (excluding free pages).<br />The difference (DBSize - DBSizeInUse) indicates how much space can be reclaimed by defragmentation. |  |  |
+| `snapshots` _[MemberSnapshotStatus](#membersnapshotstatus)_ | Snapshots contains information about the latest backup snapshots taken by this member.<br />Only the leading backup-sidecar (associated with the etcd leader) takes snapshots. |  |  |
+| `lastRestoration` _[MemberRestorationStatus](#memberrestorationstatus)_ | LastRestoration captures information about the last restoration operation performed by this member. |  |  |
+| `lastDefragmentation` _[MemberDefragmentationStatus](#memberdefragmentationstatus)_ | LastDefragmentation captures information about the last defragmentation operation performed on this member. |  |  |
+| `transitions` _[MemberTransition](#membertransition) array_ | Transitions records the state transition history of this member.<br />Entries are appended as the member transitions through different states and sub-states. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#condition-v1-meta) array_ | Conditions represents the latest available observations of the member's current state. |  |  |
 
 
 #### EtcdMemberStatus
@@ -957,6 +1010,132 @@ _Appears in:_
 | `etcdConnectionTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdConnectionTimeout defines the timeout duration for etcd client connection during leader election. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 
 
+#### MemberDefragmentationStatus
+
+
+
+MemberDefragmentationStatus captures information about the last defragmentation operation.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `status` _[OperationStatus](#operationstatus)_ | Status indicates the current status of the defragmentation (InProgress, Succeeded, Failed). |  | Enum: [InProgress Succeeded Failed] <br /> |
+| `reason` _string_ | Reason is a machine-readable reason code for the current status. |  |  |
+| `message` _string_ | Message is a human-readable message providing additional context. |  |  |
+| `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | StartTime is the time at which the defragmentation started. |  |  |
+| `endTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | EndTime is the time at which the defragmentation ended. |  |  |
+| `initialDBSize` _integer_ | InitialDBSize is the size of the etcd DB in bytes prior to defragmentation. |  |  |
+| `finalDBSize` _integer_ | FinalDBSize is the size of the etcd DB in bytes after defragmentation. |  |  |
+
+
+#### MemberRestorationStatus
+
+
+
+MemberRestorationStatus captures information about the last restoration operation.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[RestorationType](#restorationtype)_ | Type indicates the type of restoration (FromSnapshot or FromLeader). |  | Enum: [FromSnapshot FromLeader] <br /> |
+| `status` _[OperationStatus](#operationstatus)_ | Status indicates the current status of the restoration (InProgress, Succeeded, Failed). |  | Enum: [InProgress Succeeded Failed] <br /> |
+| `reason` _string_ | Reason is a machine-readable reason code for the current status. |  |  |
+| `message` _string_ | Message is a human-readable message providing additional context. |  |  |
+| `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | StartTime is the time at which the restoration started. |  |  |
+| `endTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | EndTime is the time at which the restoration ended. |  |  |
+
+
+#### MemberSnapshotStatus
+
+
+
+MemberSnapshotStatus captures information about the latest backup snapshots.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `lastFull` _[SnapshotInfo](#snapshotinfo)_ | LastFull captures information about the last full snapshot taken. |  |  |
+| `lastDelta` _[SnapshotInfo](#snapshotinfo)_ | LastDelta captures information about the last delta snapshot taken. |  |  |
+| `accumulatedDeltaSize` _integer_ | AccumulatedDeltaSize is the total size in bytes of delta snapshots accumulated<br />since the last full snapshot. This is used by druid to decide when to trigger<br />snapshot compaction. |  |  |
+
+
+#### MemberState
+
+_Underlying type:_ _string_
+
+MemberState represents the top-level state of an etcd cluster member.
+
+_Validation:_
+- Enum: [New Initializing Starting Started]
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+- [MemberTransition](#membertransition)
+
+| Field | Description |
+| --- | --- |
+| `New` | MemberStateNew indicates a newly created etcd member that has not yet started.<br />This is the initial/start state for all newly created etcd members.<br /> |
+| `Initializing` | MemberStateInitializing indicates that the backup-restore container has started<br />initialization, performing DB validation and optionally restoration.<br /> |
+| `Starting` | MemberStateStarting indicates that the etcd process is being started.<br />The member may be waiting to join as a learner or is currently a learner.<br /> |
+| `Started` | MemberStateStarted indicates that the etcd member has fully started<br />and is a voting member (Leader or Follower).<br /> |
+
+
+#### MemberSubState
+
+_Underlying type:_ _string_
+
+MemberSubState provides additional detail within a MemberState.
+
+_Validation:_
+- Enum: [DBValidationSanity DBValidationFull Restoration PendingLearner Learner Follower Leader]
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+- [MemberTransition](#membertransition)
+
+| Field | Description |
+| --- | --- |
+| `DBValidationSanity` | MemberSubStateDBValidationSanity indicates that a sanity DB validation is in progress.<br />This sub-state is valid when the top-level state is Initializing.<br /> |
+| `DBValidationFull` | MemberSubStateDBValidationFull indicates that a full DB validation is in progress.<br />This sub-state is valid when the top-level state is Initializing.<br /> |
+| `Restoration` | MemberSubStateRestoration indicates that restoration of the etcd DB from backup is in progress.<br />This sub-state is valid when the top-level state is Initializing.<br />An etcd member transitions to this sub-state only in a single-node cluster.<br /> |
+| `PendingLearner` | MemberSubStatePendingLearner indicates that the member is waiting to be added as a learner.<br />Since only one learner can be added at a time, the member may wait in this state.<br />This sub-state is valid when the top-level state is Starting.<br /> |
+| `Learner` | MemberSubStateLearner indicates that the member has been added as a learner<br />and is syncing its DB from the leader.<br />This sub-state is valid when the top-level state is Starting.<br /> |
+| `Follower` | MemberSubStateFollower indicates that the member is a voting follower in the cluster.<br />This sub-state is valid when the top-level state is Started.<br /> |
+| `Leader` | MemberSubStateLeader indicates that the member is the leader of the cluster.<br />This sub-state is valid when the top-level state is Started.<br /> |
+
+
+#### MemberTransition
+
+
+
+MemberTransition captures a single state transition in the lifecycle of an etcd member.
+
+
+
+_Appears in:_
+- [EtcdMemberResourceStatus](#etcdmemberresourcestatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `state` _[MemberState](#memberstate)_ | State is the top-level state that the member transitioned to. |  | Enum: [New Initializing Starting Started] <br /> |
+| `subState` _[MemberSubState](#membersubstate)_ | SubState is the sub-state within the top-level state, if applicable. |  | Enum: [DBValidationSanity DBValidationFull Restoration PendingLearner Learner Follower Leader] <br /> |
+| `reason` _string_ | Reason is a machine-readable reason code for the transition. |  |  |
+| `transitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | TransitionTime is the time at which the transition occurred. |  |  |
+| `message` _string_ | Message is a human-readable message providing additional context for the transition. |  |  |
+
+
 #### MetricsLevel
 
 _Underlying type:_ _string_
@@ -1010,6 +1189,44 @@ _Appears in:_
 | --- | --- |
 | `full` | OnDemandSnapshotTypeFull indicates a full snapshot, capturing the entire etcd database state.<br /> |
 | `delta` | OnDemandSnapshotTypeDelta indicates a delta snapshot, capturing only changes since the last snapshot.<br /> |
+
+
+#### OperationStatus
+
+_Underlying type:_ _string_
+
+OperationStatus defines the status of an operation (restoration or defragmentation).
+
+_Validation:_
+- Enum: [InProgress Succeeded Failed]
+
+_Appears in:_
+- [MemberDefragmentationStatus](#memberdefragmentationstatus)
+- [MemberRestorationStatus](#memberrestorationstatus)
+
+| Field | Description |
+| --- | --- |
+| `InProgress` | OperationStatusInProgress indicates that the operation is currently in progress.<br /> |
+| `Succeeded` | OperationStatusSucceeded indicates that the operation completed successfully.<br /> |
+| `Failed` | OperationStatusFailed indicates that the operation failed.<br /> |
+
+
+#### RestorationType
+
+_Underlying type:_ _string_
+
+RestorationType defines the type of restoration performed on an etcd member.
+
+_Validation:_
+- Enum: [FromSnapshot FromLeader]
+
+_Appears in:_
+- [MemberRestorationStatus](#memberrestorationstatus)
+
+| Field | Description |
+| --- | --- |
+| `FromSnapshot` | RestorationTypeFromSnapshot indicates restoration from a backup snapshot.<br /> |
+| `FromLeader` | RestorationTypeFromLeader indicates restoration by learning from the cluster leader.<br /> |
 
 
 #### SchedulingConstraints
@@ -1082,6 +1299,26 @@ _Appears in:_
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#resourcerequirements-v1-core)_ | Resources defines compute Resources required by compaction job.<br />More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/ |  |  |
 | `eventsThreshold` _integer_ | EventsThreshold defines the threshold for the number of etcd events before triggering a compaction job |  |  |
 | `triggerFullSnapshotThreshold` _integer_ | TriggerFullSnapshotThreshold defines the upper threshold for the number of etcd events before giving up on compaction job and triggering a full snapshot. |  |  |
+
+
+#### SnapshotInfo
+
+
+
+SnapshotInfo captures details about a single snapshot (full or delta).
+
+
+
+_Appears in:_
+- [MemberSnapshotStatus](#membersnapshotstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `timestamp` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | Timestamp is the time at which the snapshot was taken. |  |  |
+| `name` _string_ | Name is the name of the snapshot file that was uploaded. |  |  |
+| `size` _integer_ | Size is the size of the uncompressed snapshot file in bytes. |  |  |
+| `startRevision` _integer_ | StartRevision is the start revision of the etcd DB captured in the snapshot. |  |  |
+| `endRevision` _integer_ | EndRevision is the end revision of the etcd DB captured in the snapshot. |  |  |
 
 
 #### StorageProvider
