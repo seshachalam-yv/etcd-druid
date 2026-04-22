@@ -19,8 +19,9 @@ tolerations: [ ]
 
 topologySpreadConstraints: [ ]
 
-featureGates: { 
-  UpgradeEtcdVersion: false
+featureGates: {
+  UpgradeEtcdVersion: false,
+  UseEtcdSteward: false
 }
 
 webhookPKI:
@@ -84,8 +85,9 @@ operatorConfig:
       enabled: false
       exemptServiceAccounts:
         - system:serviceaccount:kube-system:generic-garbage-collector
-  featureGates: { 
-    UpgradeEtcdVersion: false
+  featureGates: {
+    UpgradeEtcdVersion: false,
+    UseEtcdSteward: false
   }
   logConfiguration:
     logLevel: info

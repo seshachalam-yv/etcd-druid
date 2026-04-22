@@ -106,6 +106,26 @@ rules:
   - patch
   - delete
 - apiGroups:
+  - druid.gardener.cloud
+  resources:
+  - etcdmembers
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - druid.gardener.cloud
+  resources:
+  - etcdmembers/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases

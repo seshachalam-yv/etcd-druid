@@ -1,0 +1,51 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: (unknown)
+  name: etcdmembers.druid.gardener.cloud
+  labels:
+    app.kubernetes.io/name: etcd-druid
+spec:
+  group: druid.gardener.cloud
+  names:
+    kind: EtcdMember
+    listKind: EtcdMemberList
+    plural: etcdmembers
+    shortNames:
+    - em
+    singular: etcdmember
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: State
+      type: string
+      jsonPath: .status.state
+    - name: SubState
+      type: string
+      jsonPath: .status.subState
+    - name: MemberID
+      type: string
+      jsonPath: .status.id
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
