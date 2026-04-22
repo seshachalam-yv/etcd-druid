@@ -39,6 +39,8 @@ const (
 	ClientServiceKind Kind = "ClientService"
 	// PodDisruptionBudgetKind indicates that the kind of component is a PodDisruptionBudget.
 	PodDisruptionBudgetKind Kind = "PodDisruptionBudget"
+	// EtcdMemberKind indicates that the kind of component is an EtcdMember custom resource.
+	EtcdMemberKind Kind = "EtcdMember"
 )
 
 type registry struct {

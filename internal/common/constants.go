@@ -116,6 +116,8 @@ const (
 	ComponentNameSnapshotCompactionJob = "etcd-snapshot-compaction-job"
 	// ComponentNameEtcdCopyBackupsJob is the component name for copy-backup task resource.
 	ComponentNameEtcdCopyBackupsJob = "etcd-copy-backups-job"
+	// ComponentNameEtcdMember is the component name for EtcdMember custom resource.
+	ComponentNameEtcdMember = "etcd-member"
 )
 
 // Constants for volume names
