@@ -48,6 +48,8 @@ const (
 	// Pre-sync snapshot task constants
 	preSyncTaskPrefixHibernation = "presync-snapshot-hibernation-"
 	preSyncTaskPrefixUpgrade     = "presync-snapshot-upgrade-"
+	// Pre-sync member removal task constants
+	preSyncTaskPrefixMemberRemoval = "presync-remove-members-"
 	// maxPreSyncRetries defines the maximum number of pre-sync snapshot attempts before giving up and proceeding with the upgrade.
 	maxPreSyncRetries = 3
 )
@@ -89,10 +91,6 @@ func (r _resource) GetExistingResourceNames(ctx component.OperatorContext, etcdO
 
 // PreSync performs pre-sync operations for the statefulset component.
 func (r _resource) PreSync(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd) error {
-	if !etcd.IsBackupStoreEnabled() {
-		return nil
-	}
-
 	existingSts, err := r.getExistingStatefulSet(ctx, etcd.ObjectMeta)
 	if err != nil {
 		return druiderr.WrapError(err, ErrGetStatefulSet, component.OperationPreSync,
@@ -100,6 +98,17 @@ func (r _resource) PreSync(ctx component.OperatorContext, etcd *druidv1alpha1.Et
 	}
 
 	if existingSts == nil || ptr.Deref(existingSts.Spec.Replicas, 0) == 0 {
+		return nil
+	}
+
+	// Scale-down detection: if desired replicas < current replicas (and not scale-to-zero which is handled by hibernation below).
+	// Member removal is needed regardless of backup configuration.
+	currentReplicas := int32(ptr.Deref(existingSts.Spec.Replicas, 0))
+	if etcd.Spec.Replicas > 0 && etcd.Spec.Replicas < currentReplicas {
+		return r.ensurePreSyncMemberRemoval(ctx, etcd, existingSts)
+	}
+
+	if !etcd.IsBackupStoreEnabled() {
 		return nil
 	}
 
@@ -221,6 +230,109 @@ func (r _resource) createPreSyncTask(ctx component.OperatorContext, etcd *druidv
 	r.logger.Info("Created pre-sync snapshot task", "taskName", taskName, "index", index)
 	return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
 		fmt.Sprintf("Waiting for pre-sync snapshot task %s to complete", taskName))
+}
+
+// ensurePreSyncMemberRemoval ensures that members to be removed during scale-down are removed via an EtcdOpsTask with retry logic up to maxPreSyncRetries attempts.
+func (r _resource) ensurePreSyncMemberRemoval(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, existingSts *appsv1.StatefulSet) error {
+	latestTask, latestIndex, err := r.getLatestPreSyncTask(ctx, etcd, preSyncTaskPrefixMemberRemoval)
+	if err != nil {
+		return druiderr.WrapError(err, ErrGetEtcdOpsTask, component.OperationPreSync,
+			fmt.Sprintf("Error listing EtcdOpsTasks for member removal for etcd: %v", client.ObjectKeyFromObject(etcd)))
+	}
+
+	if latestTask == nil {
+		return r.createPreSyncMemberRemovalTask(ctx, etcd, existingSts, preSyncTaskPrefixMemberRemoval, 0)
+	}
+
+	if latestTask.Status.State == nil {
+		return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
+			fmt.Sprintf("Pre-sync member removal task %s is initializing", latestTask.Name))
+	}
+
+	switch *latestTask.Status.State {
+	case druidv1alpha1.TaskStateSucceeded:
+		r.logger.Info("Pre-sync member removal completed successfully", "taskName", latestTask.Name)
+		return nil
+
+	case druidv1alpha1.TaskStateFailed, druidv1alpha1.TaskStateRejected:
+		if latestIndex != nil && *latestIndex >= maxPreSyncRetries-1 {
+			r.logger.Error(fmt.Errorf("max retries exceeded"), "Pre-sync member removal failed after max attempts",
+				"etcd", client.ObjectKeyFromObject(etcd), "lastTask", latestTask.Name, "lastState", *latestTask.Status.State)
+			return nil
+		}
+		nextIndex := 0
+		if latestIndex != nil {
+			nextIndex = *latestIndex + 1
+		}
+		return r.createPreSyncMemberRemovalTask(ctx, etcd, existingSts, preSyncTaskPrefixMemberRemoval, nextIndex)
+
+	default:
+		return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
+			fmt.Sprintf("Pre-sync member removal task %s is %s", latestTask.Name, *latestTask.Status.State))
+	}
+}
+
+// createPreSyncMemberRemovalTask creates an EtcdOpsTask to remove members during scale-down.
+func (r _resource) createPreSyncMemberRemovalTask(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, existingSts *appsv1.StatefulSet, prefix string, index int) error {
+	taskName := fmt.Sprintf("%s%d", prefix, index)
+	currentReplicas := int32(ptr.Deref(existingSts.Spec.Replicas, 0))
+	membersToRemove := getMembersToRemove(etcd, currentReplicas)
+
+	task := &druidv1alpha1.EtcdOpsTask{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            taskName,
+			Namespace:       etcd.Namespace,
+			OwnerReferences: []metav1.OwnerReference{druidv1alpha1.GetAsOwnerReference(etcd.ObjectMeta)},
+		},
+		Spec: druidv1alpha1.EtcdOpsTaskSpec{
+			EtcdName: ptr.To(etcd.Name),
+			Config: druidv1alpha1.EtcdOpsTaskConfig{
+				RemoveMembers: &druidv1alpha1.RemoveMembersConfig{
+					MembersToRemove: membersToRemove,
+				},
+			},
+		},
+	}
+
+	if err := r.client.Create(ctx, task); err != nil {
+		return druiderr.WrapError(err, ErrCreateEtcdOpsTask, component.OperationPreSync,
+			fmt.Sprintf("Failed to create pre-sync member removal EtcdOpsTask %s for etcd: %v", taskName, client.ObjectKeyFromObject(etcd)))
+	}
+
+	r.logger.Info("Created pre-sync member removal task", "taskName", taskName, "index", index, "membersToRemove", len(membersToRemove))
+	return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
+		fmt.Sprintf("Waiting for pre-sync member removal task %s to complete", taskName))
+}
+
+// getMembersToRemove returns the list of members to remove during scale-down, ordered from highest ordinal to lowest.
+func getMembersToRemove(etcd *druidv1alpha1.Etcd, currentReplicas int32) []druidv1alpha1.MemberToRemove {
+	members := make([]druidv1alpha1.MemberToRemove, 0, currentReplicas-etcd.Spec.Replicas)
+	peerScheme := getPeerScheme(etcd)
+	peerSvcName := druidv1alpha1.GetPeerServiceName(etcd.ObjectMeta)
+	peerPort := ptr.Deref(etcd.Spec.Etcd.ServerPort, common.DefaultPortEtcdPeer)
+
+	for i := currentReplicas - 1; i >= etcd.Spec.Replicas; i-- {
+		podName := druidv1alpha1.GetOrdinalPodName(etcd.ObjectMeta, int(i))
+		peerURL := fmt.Sprintf("%s://%s.%s.%s.svc:%d",
+			peerScheme,
+			podName,
+			peerSvcName,
+			etcd.Namespace,
+			peerPort)
+		members = append(members, druidv1alpha1.MemberToRemove{
+			Name:    podName,
+			PeerURL: peerURL,
+		})
+	}
+	return members
+}
+
+// getPeerScheme returns "https" if peer TLS is configured, otherwise "http".
+func getPeerScheme(etcd *druidv1alpha1.Etcd) string {
+	if etcd.Spec.Etcd.PeerUrlTLS != nil {
+		return "https"
+	}
+	return "http"
 }
 
 // Sync creates or updates the statefulset for the given Etcd.

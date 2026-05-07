@@ -418,6 +418,209 @@ func buildPreSyncTask(prefix string, index int, state *druidv1alpha1.TaskState) 
 	return task
 }
 
+func buildPreSyncMemberRemovalTask(prefix string, index int, state *druidv1alpha1.TaskState, membersToRemove []druidv1alpha1.MemberToRemove) *druidv1alpha1.EtcdOpsTask {
+	taskName := fmt.Sprintf("%s%d", prefix, index)
+	builder := testutils.EtcdOpsTaskBuilderWithDefaults(taskName, testutils.TestNamespace).
+		WithEtcdName(testutils.TestEtcdName).
+		WithRemoveMembersConfig(&druidv1alpha1.RemoveMembersConfig{MembersToRemove: membersToRemove})
+	if state != nil {
+		builder = builder.WithState(*state)
+	}
+	task := builder.Build()
+	return task
+}
+
+// ----------------------------------- PreSync Scale-Down -----------------------------------
+func TestPreSyncScaleDown(t *testing.T) {
+	testCases := []struct {
+		name            string
+		backupEnabled   bool
+		stsReplicas     int32
+		etcdReplicas    int32
+		peerTLSEnabled  bool
+		existingTasks   []*druidv1alpha1.EtcdOpsTask
+		expectedErrCode *druidapicommon.ErrorCode
+	}{
+		{
+			name:            "scale-down creates member removal task when no task exists",
+			backupEnabled:   true,
+			stsReplicas:     3,
+			etcdReplicas:    1,
+			expectedErrCode: ptr.To(druidapicommon.ErrorCode(druiderr.ErrRequeueAfter)),
+		},
+		{
+			name:          "scale-down succeeds when task completed",
+			backupEnabled: true,
+			stsReplicas:   3,
+			etcdReplicas:  1,
+			existingTasks: []*druidv1alpha1.EtcdOpsTask{
+				buildPreSyncMemberRemovalTask(preSyncTaskPrefixMemberRemoval, 0, ptr.To(druidv1alpha1.TaskStateSucceeded), []druidv1alpha1.MemberToRemove{
+					{Name: "etcd-test-2", PeerURL: "http://etcd-test-2.etcd-test-peer.test-ns.svc:2380"},
+					{Name: "etcd-test-1", PeerURL: "http://etcd-test-1.etcd-test-peer.test-ns.svc:2380"},
+				}),
+			},
+		},
+		{
+			name:          "scale-down retries when task failed and retries remain",
+			backupEnabled: true,
+			stsReplicas:   3,
+			etcdReplicas:  1,
+			existingTasks: []*druidv1alpha1.EtcdOpsTask{
+				buildPreSyncMemberRemovalTask(preSyncTaskPrefixMemberRemoval, 1, ptr.To(druidv1alpha1.TaskStateFailed), []druidv1alpha1.MemberToRemove{
+					{Name: "etcd-test-2", PeerURL: "http://etcd-test-2.etcd-test-peer.test-ns.svc:2380"},
+					{Name: "etcd-test-1", PeerURL: "http://etcd-test-1.etcd-test-peer.test-ns.svc:2380"},
+				}),
+			},
+			expectedErrCode: ptr.To(druidapicommon.ErrorCode(druiderr.ErrRequeueAfter)),
+		},
+		{
+			name:          "scale-down proceeds after max retries exceeded",
+			backupEnabled: true,
+			stsReplicas:   3,
+			etcdReplicas:  1,
+			existingTasks: []*druidv1alpha1.EtcdOpsTask{
+				buildPreSyncMemberRemovalTask(preSyncTaskPrefixMemberRemoval, maxPreSyncRetries-1, ptr.To(druidv1alpha1.TaskStateFailed), []druidv1alpha1.MemberToRemove{
+					{Name: "etcd-test-2", PeerURL: "http://etcd-test-2.etcd-test-peer.test-ns.svc:2380"},
+					{Name: "etcd-test-1", PeerURL: "http://etcd-test-1.etcd-test-peer.test-ns.svc:2380"},
+				}),
+			},
+		},
+		{
+			name:          "scale-down requeues when task is in progress",
+			backupEnabled: true,
+			stsReplicas:   3,
+			etcdReplicas:  1,
+			existingTasks: []*druidv1alpha1.EtcdOpsTask{
+				buildPreSyncMemberRemovalTask(preSyncTaskPrefixMemberRemoval, 0, ptr.To(druidv1alpha1.TaskStateInProgress), []druidv1alpha1.MemberToRemove{
+					{Name: "etcd-test-2", PeerURL: "http://etcd-test-2.etcd-test-peer.test-ns.svc:2380"},
+					{Name: "etcd-test-1", PeerURL: "http://etcd-test-1.etcd-test-peer.test-ns.svc:2380"},
+				}),
+			},
+			expectedErrCode: ptr.To(druidapicommon.ErrorCode(druiderr.ErrRequeueAfter)),
+		},
+		{
+			name:            "scale-down works without backup enabled",
+			backupEnabled:   false,
+			stsReplicas:     3,
+			etcdReplicas:    1,
+			expectedErrCode: ptr.To(druidapicommon.ErrorCode(druiderr.ErrRequeueAfter)),
+		},
+		{
+			name:            "scale-down with peer TLS uses https scheme",
+			backupEnabled:   true,
+			stsReplicas:     3,
+			etcdReplicas:    1,
+			peerTLSEnabled:  true,
+			expectedErrCode: ptr.To(druidapicommon.ErrorCode(druiderr.ErrRequeueAfter)),
+		},
+		{
+			name:          "hibernation does not trigger member removal",
+			backupEnabled: true,
+			stsReplicas:   3,
+			etcdReplicas:  0,
+			existingTasks: []*druidv1alpha1.EtcdOpsTask{buildPreSyncTask(preSyncTaskPrefixHibernation, 0, ptr.To(druidv1alpha1.TaskStateSucceeded))},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			etcdBuilder := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).
+				WithReplicas(tc.etcdReplicas)
+			if !tc.backupEnabled {
+				etcdBuilder = etcdBuilder.WithoutProvider()
+			}
+			if tc.peerTLSEnabled {
+				etcdBuilder = etcdBuilder.WithPeerTLS()
+			}
+			etcd := etcdBuilder.Build()
+
+			iv := testutils.CreateImageVector(true, true)
+
+			var existingObjects []client.Object
+			existingObjects = append(existingObjects, buildStatefulSetWithImage(etcd.ObjectMeta, tc.stsReplicas, ""))
+			for _, task := range tc.existingTasks {
+				existingObjects = append(existingObjects, task)
+			}
+
+			cl := testutils.NewTestClientBuilder().
+				WithScheme(kubernetes.Scheme).
+				WithObjects(existingObjects...).
+				Build()
+			operator := New(cl, iv)
+			opCtx := component.NewOperatorContext(context.Background(), logr.Discard(), uuid.NewString())
+
+			syncErr := operator.PreSync(opCtx, etcd)
+
+			if tc.expectedErrCode == nil {
+				g.Expect(syncErr).ToNot(HaveOccurred())
+			} else {
+				g.Expect(syncErr).To(HaveOccurred())
+				druidErr := druiderr.AsDruidError(syncErr)
+				g.Expect(druidErr).ToNot(BeNil())
+				g.Expect(druidErr.Code).To(Equal(*tc.expectedErrCode))
+			}
+		})
+	}
+}
+
+// ----------------------------------- GetMembersToRemove -----------------------------------
+func TestGetMembersToRemove(t *testing.T) {
+	testCases := []struct {
+		name            string
+		currentReplicas int32
+		desiredReplicas int32
+		peerTLSEnabled  bool
+		expectedMembers []druidv1alpha1.MemberToRemove
+	}{
+		{
+			name:            "scale from 3 to 1 removes ordinals 2 and 1",
+			currentReplicas: 3,
+			desiredReplicas: 1,
+			expectedMembers: []druidv1alpha1.MemberToRemove{
+				{Name: "etcd-test-2", PeerURL: "http://etcd-test-2.etcd-test-peer.test-ns.svc:2380"},
+				{Name: "etcd-test-1", PeerURL: "http://etcd-test-1.etcd-test-peer.test-ns.svc:2380"},
+			},
+		},
+		{
+			name:            "scale from 5 to 3 removes ordinals 4 and 3",
+			currentReplicas: 5,
+			desiredReplicas: 3,
+			expectedMembers: []druidv1alpha1.MemberToRemove{
+				{Name: "etcd-test-4", PeerURL: "http://etcd-test-4.etcd-test-peer.test-ns.svc:2380"},
+				{Name: "etcd-test-3", PeerURL: "http://etcd-test-3.etcd-test-peer.test-ns.svc:2380"},
+			},
+		},
+		{
+			name:            "scale from 3 to 1 with TLS uses https",
+			currentReplicas: 3,
+			desiredReplicas: 1,
+			peerTLSEnabled:  true,
+			expectedMembers: []druidv1alpha1.MemberToRemove{
+				{Name: "etcd-test-2", PeerURL: "https://etcd-test-2.etcd-test-peer.test-ns.svc:2380"},
+				{Name: "etcd-test-1", PeerURL: "https://etcd-test-1.etcd-test-peer.test-ns.svc:2380"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			etcdBuilder := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).
+				WithReplicas(tc.desiredReplicas)
+			if tc.peerTLSEnabled {
+				etcdBuilder = etcdBuilder.WithPeerTLS()
+			}
+			etcd := etcdBuilder.Build()
+
+			members := getMembersToRemove(etcd, tc.currentReplicas)
+			g.Expect(members).To(Equal(tc.expectedMembers))
+		})
+	}
+}
+
 func buildStatefulSetWithImage(objMeta metav1.ObjectMeta, replicas int32, image string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
