@@ -651,3 +651,84 @@ func buildStatefulSetWithImage(objMeta metav1.ObjectMeta, replicas int32, image 
 		},
 	}
 }
+
+// ----------------------------------- Sync Scale-Down PVC Cleanup -----------------------------------
+
+func TestSync_ScaleDown_DeletesPVCs(t *testing.T) {
+	g := NewWithT(t)
+
+	// Build an etcd with 1 desired replica (scaled down from 3).
+	etcd := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).
+		WithReplicas(1).
+		Build()
+
+	// VCT name is "etcd-main" (set by EtcdBuilderWithDefaults), STS name == etcd name == "etcd-test".
+	vctName := *etcd.Spec.VolumeClaimTemplate
+	stsName := druidv1alpha1.GetStatefulSetName(etcd.ObjectMeta)
+
+	// Create PVCs for ordinals 0, 1, 2 (ordinals 1 and 2 should be deleted after scale-down).
+	pvc0 := buildPVC(fmt.Sprintf("%s-%s-0", vctName, stsName), testutils.TestNamespace)
+	pvc1 := buildPVC(fmt.Sprintf("%s-%s-1", vctName, stsName), testutils.TestNamespace)
+	pvc2 := buildPVC(fmt.Sprintf("%s-%s-2", vctName, stsName), testutils.TestNamespace)
+
+	cl := testutils.NewTestClientBuilder().
+		WithScheme(kubernetes.Scheme).
+		WithObjects(pvc0, pvc1, pvc2).
+		Build()
+
+	r := &_resource{
+		client: cl,
+		logger: logr.Discard(),
+	}
+	opCtx := component.NewOperatorContext(context.Background(), logr.Discard(), uuid.NewString())
+
+	err := r.deleteScaleDownPVCs(opCtx, etcd, 3, 1)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// PVC for ordinal 0 must still exist.
+	pvc0After := &corev1.PersistentVolumeClaim{}
+	err = cl.Get(context.Background(), client.ObjectKey{Name: pvc0.Name, Namespace: testutils.TestNamespace}, pvc0After)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// PVCs for ordinals 1 and 2 must have been deleted.
+	pvc1After := &corev1.PersistentVolumeClaim{}
+	err = cl.Get(context.Background(), client.ObjectKey{Name: pvc1.Name, Namespace: testutils.TestNamespace}, pvc1After)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected PVC %s to be deleted", pvc1.Name)
+
+	pvc2After := &corev1.PersistentVolumeClaim{}
+	err = cl.Get(context.Background(), client.ObjectKey{Name: pvc2.Name, Namespace: testutils.TestNamespace}, pvc2After)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected PVC %s to be deleted", pvc2.Name)
+}
+
+func TestSync_ScaleDown_PVCsAlreadyDeleted(t *testing.T) {
+	g := NewWithT(t)
+
+	// Build an etcd with 1 desired replica (scaled down from 3).
+	etcd := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).
+		WithReplicas(1).
+		Build()
+
+	// No PVCs exist in the fake client — they have already been deleted.
+	cl := testutils.NewTestClientBuilder().
+		WithScheme(kubernetes.Scheme).
+		Build()
+
+	r := &_resource{
+		client: cl,
+		logger: logr.Discard(),
+	}
+	opCtx := component.NewOperatorContext(context.Background(), logr.Discard(), uuid.NewString())
+
+	// Should not return an error even though the PVCs don't exist (NotFound is idempotent).
+	err := r.deleteScaleDownPVCs(opCtx, etcd, 3, 1)
+	g.Expect(err).ToNot(HaveOccurred())
+}
+
+func buildPVC(name, namespace string) *corev1.PersistentVolumeClaim {
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+}

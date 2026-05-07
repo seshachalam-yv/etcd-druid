@@ -371,7 +371,57 @@ func (r _resource) Sync(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd)
 		}
 	}
 
-	return r.createOrPatch(ctx, etcd)
+	// Capture old replica count before updating, for PVC cleanup after scale-down.
+	var oldReplicas int32
+	if existingSTS != nil {
+		oldReplicas = ptr.Deref(existingSTS.Spec.Replicas, 0)
+	}
+
+	if err = r.createOrPatch(ctx, etcd); err != nil {
+		return err
+	}
+
+	// After a successful scale-down (new replicas > 0 to avoid collision with hibernation path),
+	// delete PVCs for the removed ordinals.
+	if etcd.Spec.Replicas > 0 {
+		if err = r.deleteScaleDownPVCs(ctx, etcd, oldReplicas, etcd.Spec.Replicas); err != nil {
+			return druiderr.WrapError(err,
+				ErrSyncStatefulSet,
+				component.OperationSync,
+				fmt.Sprintf("Error deleting PVCs for scaled-down members for etcd: %v", druidv1alpha1.GetNamespaceName(etcd.ObjectMeta)))
+		}
+	}
+
+	return nil
+}
+
+// deleteScaleDownPVCs deletes PVCs for ordinals that were removed during a scale-down.
+// It is idempotent: NotFound errors are ignored.
+// PVC cleanup is only done when newReplicas > 0 to avoid conflicting with the hibernation path.
+func (r _resource) deleteScaleDownPVCs(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, oldReplicas, newReplicas int32) error {
+	if oldReplicas <= newReplicas {
+		return nil
+	}
+	vctName := ptr.Deref(etcd.Spec.VolumeClaimTemplate, etcd.Name)
+	stsName := druidv1alpha1.GetStatefulSetName(etcd.ObjectMeta)
+	for i := oldReplicas - 1; i >= newReplicas; i-- {
+		pvcName := fmt.Sprintf("%s-%s-%d", vctName, stsName, i)
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pvcName,
+				Namespace: etcd.Namespace,
+			},
+		}
+		if err := r.client.Delete(ctx, pvc); err != nil {
+			if apierrors.IsNotFound(err) {
+				r.logger.Info("PVC already absent, skipping", "pvc", pvcName)
+				continue
+			}
+			return err
+		}
+		r.logger.Info("Deleted PVC for scaled-down member", "pvc", pvcName)
+	}
+	return nil
 }
 
 // TriggerDelete triggers the deletion of the statefulset for the given Etcd.
