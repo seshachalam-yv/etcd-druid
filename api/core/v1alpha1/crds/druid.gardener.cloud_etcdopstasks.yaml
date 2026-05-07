@@ -107,6 +107,36 @@ spec:
                     - message: isFinal must be false (or omitted) when type is 'delta'
                       rule: 'self.type == ''delta'' ? !has(self.isFinal) || self.isFinal
                         == false : true'
+                  removeMembers:
+                    description: RemoveMembers defines the configuration for a member
+                      removal task.
+                    properties:
+                      membersToRemove:
+                        description: MembersToRemove is the list of etcd members to
+                          be removed from the cluster.
+                        items:
+                          description: MemberToRemove defines an etcd member to be
+                            removed.
+                          properties:
+                            name:
+                              description: Name is the name of the etcd member (matches
+                                the pod name).
+                              minLength: 1
+                              type: string
+                            peerUrl:
+                              description: PeerURL is the peer URL of the etcd member
+                                to be removed.
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          - peerUrl
+                          type: object
+                        minItems: 1
+                        type: array
+                    required:
+                    - membersToRemove
+                    type: object
                 type: object
                 x-kubernetes-validations:
                 - message: config is immutable

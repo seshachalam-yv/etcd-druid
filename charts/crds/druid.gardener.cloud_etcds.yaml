@@ -701,9 +701,6 @@ spec:
                   It can be scaled back up to the previously set value to continue running the etcd cluster.
                 format: int32
                 type: integer
-                x-kubernetes-validations:
-                - message: Replicas can either be increased or be downscaled to 0.
-                  rule: 'self==0 ? true : self < oldSelf ? false : true'
               runAsRoot:
                 description: |-
                   RunAsRoot defines whether the securityContext of the pod specification should indicate that the containers shall
@@ -2155,6 +2152,15 @@ spec:
                 type: string
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: Cannot scale up while a scale-down operation is in progress.
+          rule: 'self.spec.replicas > oldSelf.spec.replicas ? !self.status.conditions.exists(c,
+            c.type == ''ScaleOperationInProgress'' && c.status == ''True'' && c.reason
+            == ''ScalingDown'') : true'
+        - message: Cannot scale down while a scale-up operation is in progress.
+          rule: 'self.spec.replicas < oldSelf.spec.replicas ? !self.status.conditions.exists(c,
+            c.type == ''ScaleOperationInProgress'' && c.status == ''True'' && c.reason
+            == ''ScalingUp'') : true'
     served: true
     storage: true
     subresources:

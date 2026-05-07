@@ -607,6 +607,7 @@ _Appears in:_
 | `BackupReady` | ConditionTypeBackupReady is a constant for a condition type indicating that the etcd backup is ready.<br /> |
 | `DataVolumesReady` | ConditionTypeDataVolumesReady is a constant for a condition type indicating that the etcd data volumes are ready.<br /> |
 | `ClusterIDMismatch` | ConditionTypeClusterIDMismatch is a constant for a condition type indicating that the etcd cluster has multiple cluster IDs.<br /> |
+| `ScaleOperationInProgress` | ConditionTypeScaleOperationInProgress is a constant for a condition type indicating that a scale operation is in progress.<br /> |
 | `Succeeded` | EtcdCopyBackupsTaskSucceeded is a condition type indicating that a EtcdCopyBackupsTask has succeeded.<br /> |
 | `Failed` | EtcdCopyBackupsTaskFailed is a condition type indicating that a EtcdCopyBackupsTask has failed.<br /> |
 
@@ -813,6 +814,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `onDemandSnapshot` _[OnDemandSnapshotConfig](#ondemandsnapshotconfig)_ | OnDemandSnapshot defines the configuration for an on-demand snapshot task. |  |  |
+| `removeMembers` _[RemoveMembersConfig](#removemembersconfig)_ | RemoveMembers defines the configuration for a member removal task. |  |  |
 
 
 #### EtcdOpsTaskSpec
@@ -958,6 +960,23 @@ _Appears in:_
 | `etcdConnectionTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdConnectionTimeout defines the timeout duration for etcd client connection during leader election. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 
 
+#### MemberToRemove
+
+
+
+MemberToRemove defines an etcd member to be removed.
+
+
+
+_Appears in:_
+- [RemoveMembersConfig](#removemembersconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the etcd member (matches the pod name). |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `peerUrl` _string_ | PeerURL is the peer URL of the etcd member to be removed. |  | MinLength: 1 <br />Required: \{\} <br /> |
+
+
 #### MetricsLevel
 
 _Underlying type:_ _string_
@@ -1011,6 +1030,22 @@ _Appears in:_
 | --- | --- |
 | `full` | OnDemandSnapshotTypeFull indicates a full snapshot, capturing the entire etcd database state.<br /> |
 | `delta` | OnDemandSnapshotTypeDelta indicates a delta snapshot, capturing only changes since the last snapshot.<br /> |
+
+
+#### RemoveMembersConfig
+
+
+
+RemoveMembersConfig defines the configuration for a member removal task.
+
+
+
+_Appears in:_
+- [EtcdOpsTaskConfig](#etcdopstaskconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `membersToRemove` _[MemberToRemove](#membertoremove) array_ | MembersToRemove is the list of etcd members to be removed from the cluster. |  | MinItems: 1 <br />Required: \{\} <br /> |
 
 
 #### SchedulingConstraints
