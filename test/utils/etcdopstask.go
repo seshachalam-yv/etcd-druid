@@ -56,6 +56,14 @@ func (eb *EtcdOpsTaskBuilder) WithOnDemandSnapshotConfig(config *druidv1alpha1.O
 	return eb
 }
 
+func (eb *EtcdOpsTaskBuilder) WithRemoveMembersConfig(config *druidv1alpha1.RemoveMembersConfig) *EtcdOpsTaskBuilder {
+	if eb == nil || eb.task == nil {
+		return nil
+	}
+	eb.task.Spec.Config.RemoveMembers = config
+	return eb
+}
+
 func (eb *EtcdOpsTaskBuilder) WithState(state druidv1alpha1.TaskState) *EtcdOpsTaskBuilder {
 	if eb == nil || eb.task == nil {
 		return nil
