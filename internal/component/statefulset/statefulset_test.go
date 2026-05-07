@@ -732,3 +732,123 @@ func buildPVC(name, namespace string) *corev1.PersistentVolumeClaim {
 		},
 	}
 }
+
+func TestSetScaleOperationCondition(t *testing.T) {
+	testCases := []struct {
+		name               string
+		existingConditions []druidv1alpha1.Condition
+		status             druidv1alpha1.ConditionStatus
+		reason             string
+		message            string
+		expectTransition   bool
+	}{
+		{
+			name:               "adds condition when none exists",
+			existingConditions: nil,
+			status:             druidv1alpha1.ConditionTrue,
+			reason:             "ScalingDown",
+			message:            "Scale-down member removal in progress",
+			expectTransition:   true,
+		},
+		{
+			name: "updates existing condition with same status - no transition time change",
+			existingConditions: []druidv1alpha1.Condition{
+				{
+					Type:               druidv1alpha1.ConditionTypeScaleOperationInProgress,
+					Status:             druidv1alpha1.ConditionTrue,
+					Reason:             "ScalingDown",
+					Message:            "Scale-down member removal in progress",
+					LastTransitionTime: metav1.Now(),
+					LastUpdateTime:     metav1.Now(),
+				},
+			},
+			status:           druidv1alpha1.ConditionTrue,
+			reason:           "ScalingDown",
+			message:          "Still scaling down",
+			expectTransition: false,
+		},
+		{
+			name: "updates existing condition with different status - transition time changes",
+			existingConditions: []druidv1alpha1.Condition{
+				{
+					Type:               druidv1alpha1.ConditionTypeScaleOperationInProgress,
+					Status:             druidv1alpha1.ConditionTrue,
+					Reason:             "ScalingDown",
+					Message:            "Scale-down member removal in progress",
+					LastTransitionTime: metav1.NewTime(metav1.Now().Add(-10 * 60 * 1e9)),
+					LastUpdateTime:     metav1.NewTime(metav1.Now().Add(-10 * 60 * 1e9)),
+				},
+			},
+			status:           druidv1alpha1.ConditionFalse,
+			reason:           "ScaleOperationCompleted",
+			message:          "Scale operation has completed successfully",
+			expectTransition: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			etcd := &druidv1alpha1.Etcd{}
+			etcd.Status.Conditions = tc.existingConditions
+
+			var oldTransitionTime metav1.Time
+			for _, c := range tc.existingConditions {
+				if c.Type == druidv1alpha1.ConditionTypeScaleOperationInProgress {
+					oldTransitionTime = c.LastTransitionTime
+				}
+			}
+
+			setScaleOperationCondition(etcd, tc.status, tc.reason, tc.message)
+
+			var found bool
+			for _, c := range etcd.Status.Conditions {
+				if c.Type == druidv1alpha1.ConditionTypeScaleOperationInProgress {
+					found = true
+					g.Expect(c.Status).To(Equal(tc.status))
+					g.Expect(c.Reason).To(Equal(tc.reason))
+					g.Expect(c.Message).To(Equal(tc.message))
+					if tc.expectTransition {
+						if !oldTransitionTime.IsZero() {
+							g.Expect(c.LastTransitionTime.Time).ToNot(Equal(oldTransitionTime.Time))
+						}
+					} else {
+						g.Expect(c.LastTransitionTime).To(Equal(oldTransitionTime))
+					}
+					break
+				}
+			}
+			g.Expect(found).To(BeTrue(), "ScaleOperationInProgress condition should exist")
+		})
+	}
+}
+
+func TestPreSyncScaleDown_SetsCondition(t *testing.T) {
+	g := NewWithT(t)
+
+	etcd := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).
+		WithReplicas(1).
+		Build()
+
+	iv := testutils.CreateImageVector(true, true)
+	cl := testutils.NewTestClientBuilder().
+		WithScheme(kubernetes.Scheme).
+		WithObjects(buildStatefulSetWithImage(etcd.ObjectMeta, 3, "")).
+		Build()
+	operator := New(cl, iv)
+	opCtx := component.NewOperatorContext(context.Background(), logr.Discard(), uuid.NewString())
+
+	syncErr := operator.PreSync(opCtx, etcd)
+	g.Expect(syncErr).To(HaveOccurred())
+
+	var found bool
+	for _, c := range etcd.Status.Conditions {
+		if c.Type == druidv1alpha1.ConditionTypeScaleOperationInProgress {
+			found = true
+			g.Expect(c.Status).To(Equal(druidv1alpha1.ConditionTrue))
+			g.Expect(c.Reason).To(Equal("ScalingDown"))
+			break
+		}
+	}
+	g.Expect(found).To(BeTrue(), "PreSync should set ScaleOperationInProgress condition to True")
+}

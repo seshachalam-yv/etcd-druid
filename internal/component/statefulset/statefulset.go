@@ -299,6 +299,7 @@ func (r _resource) createPreSyncMemberRemovalTask(ctx component.OperatorContext,
 			fmt.Sprintf("Failed to create pre-sync member removal EtcdOpsTask %s for etcd: %v", taskName, client.ObjectKeyFromObject(etcd)))
 	}
 
+	setScaleOperationCondition(etcd, druidv1alpha1.ConditionTrue, "ScalingDown", "Scale-down member removal in progress")
 	r.logger.Info("Created pre-sync member removal task", "taskName", taskName, "index", index, "membersToRemove", len(membersToRemove))
 	return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
 		fmt.Sprintf("Waiting for pre-sync member removal task %s to complete", taskName))
@@ -662,4 +663,28 @@ func getObjectKey(obj metav1.ObjectMeta) client.ObjectKey {
 		Name:      obj.Name,
 		Namespace: obj.Namespace,
 	}
+}
+
+func setScaleOperationCondition(etcd *druidv1alpha1.Etcd, status druidv1alpha1.ConditionStatus, reason, message string) {
+	now := metav1.Now()
+	for i, c := range etcd.Status.Conditions {
+		if c.Type == druidv1alpha1.ConditionTypeScaleOperationInProgress {
+			if c.Status != status {
+				etcd.Status.Conditions[i].LastTransitionTime = now
+			}
+			etcd.Status.Conditions[i].Status = status
+			etcd.Status.Conditions[i].Reason = reason
+			etcd.Status.Conditions[i].Message = message
+			etcd.Status.Conditions[i].LastUpdateTime = now
+			return
+		}
+	}
+	etcd.Status.Conditions = append(etcd.Status.Conditions, druidv1alpha1.Condition{
+		Type:               druidv1alpha1.ConditionTypeScaleOperationInProgress,
+		Status:             status,
+		LastTransitionTime: now,
+		LastUpdateTime:     now,
+		Reason:             reason,
+		Message:            message,
+	})
 }
