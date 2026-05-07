@@ -57,6 +57,11 @@ func GetCompactionJobName(etcdObjMeta metav1.ObjectMeta) string {
 	return fmt.Sprintf("%s-compactor", etcdObjMeta.Name)
 }
 
+// GetMemberRemoveJobName returns the member-remove job name for the Etcd.
+func GetMemberRemoveJobName(etcdObjMeta metav1.ObjectMeta) string {
+	return fmt.Sprintf("%s-member-remove", etcdObjMeta.Name)
+}
+
 // GetOrdinalPodName returns the Etcd pod name based on the ordinal.
 func GetOrdinalPodName(etcdObjMeta metav1.ObjectMeta, ordinal int) string {
 	return fmt.Sprintf("%s-%d", etcdObjMeta.Name, ordinal)

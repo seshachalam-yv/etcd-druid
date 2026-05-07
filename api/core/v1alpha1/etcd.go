@@ -55,6 +55,8 @@ const (
 // +kubebuilder:printcolumn:name="Cluster Size",type=integer,JSONPath=`.spec.replicas`,priority=1
 // +kubebuilder:printcolumn:name="Current Replicas",type=integer,JSONPath=`.status.currentReplicas`,priority=1
 // +kubebuilder:printcolumn:name="Ready Replicas",type=integer,JSONPath=`.status.readyReplicas`,priority=1
+// +kubebuilder:validation:XValidation:message="Cannot scale up while a scale-down operation is in progress.",rule="self.spec.replicas > oldSelf.spec.replicas ? !self.status.conditions.exists(c, c.type == 'ScaleOperationInProgress' && c.status == 'True' && c.reason == 'ScalingDown') : true"
+// +kubebuilder:validation:XValidation:message="Cannot scale down while a scale-up operation is in progress.",rule="self.spec.replicas < oldSelf.spec.replicas ? !self.status.conditions.exists(c, c.type == 'ScaleOperationInProgress' && c.status == 'True' && c.reason == 'ScalingUp') : true"
 
 // Etcd is the Schema for the etcds API
 type Etcd struct {
@@ -339,7 +341,6 @@ type EtcdSpec struct {
 	// If set to 0, the etcd cluster will be scaled down, i.e., it will cease to run.
 	// It can be scaled back up to the previously set value to continue running the etcd cluster.
 	// +required
-	// +kubebuilder:validation:XValidation:message="Replicas can either be increased or be downscaled to 0.",rule="self==0 ? true : self < oldSelf ? false : true"
 	Replicas int32 `json:"replicas"`
 	// PriorityClassName is the name of a priority class that shall be used for the etcd pods.
 	// +optional
@@ -399,6 +400,8 @@ const (
 	ConditionTypeDataVolumesReady ConditionType = "DataVolumesReady"
 	// ConditionTypeClusterIDMismatch is a constant for a condition type indicating that the etcd cluster has multiple cluster IDs.
 	ConditionTypeClusterIDMismatch ConditionType = "ClusterIDMismatch"
+	// ConditionTypeScaleOperationInProgress is a constant for a condition type indicating that a scale operation is in progress.
+	ConditionTypeScaleOperationInProgress ConditionType = "ScaleOperationInProgress"
 )
 
 // EtcdMemberConditionStatus is the status of an etcd cluster member.

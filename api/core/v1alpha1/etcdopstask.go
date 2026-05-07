@@ -128,6 +128,9 @@ type EtcdOpsTaskConfig struct {
 	// OnDemandSnapshot defines the configuration for an on-demand snapshot task.
 	// +optional
 	OnDemandSnapshot *OnDemandSnapshotConfig `json:"onDemandSnapshot,omitempty"`
+	// RemoveMembers defines the configuration for a member removal task.
+	// +optional
+	RemoveMembers *RemoveMembersConfig `json:"removeMembers,omitempty"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////
