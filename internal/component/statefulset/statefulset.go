@@ -299,7 +299,9 @@ func (r _resource) createPreSyncMemberRemovalTask(ctx component.OperatorContext,
 			fmt.Sprintf("Failed to create pre-sync member removal EtcdOpsTask %s for etcd: %v", taskName, client.ObjectKeyFromObject(etcd)))
 	}
 
-	setScaleOperationCondition(etcd, druidv1alpha1.ConditionTrue, "ScalingDown", "Scale-down member removal in progress")
+	if err := r.patchScaleOperationCondition(ctx, etcd, druidv1alpha1.ConditionTrue, "ScalingDown", "Scale-down member removal in progress"); err != nil {
+		r.logger.Error(err, "failed to patch ScaleOperationInProgress condition")
+	}
 	r.logger.Info("Created pre-sync member removal task", "taskName", taskName, "index", index, "membersToRemove", len(membersToRemove))
 	return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
 		fmt.Sprintf("Waiting for pre-sync member removal task %s to complete", taskName))
@@ -663,6 +665,12 @@ func getObjectKey(obj metav1.ObjectMeta) client.ObjectKey {
 		Name:      obj.Name,
 		Namespace: obj.Namespace,
 	}
+}
+
+func (r _resource) patchScaleOperationCondition(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, status druidv1alpha1.ConditionStatus, reason, message string) error {
+	originalEtcd := etcd.DeepCopy()
+	setScaleOperationCondition(etcd, status, reason, message)
+	return r.client.Status().Patch(ctx, etcd, client.MergeFrom(originalEtcd))
 }
 
 func setScaleOperationCondition(etcd *druidv1alpha1.Etcd, status druidv1alpha1.ConditionStatus, reason, message string) {

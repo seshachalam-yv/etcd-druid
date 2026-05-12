@@ -318,8 +318,11 @@ func (h *handler) buildJob(etcd *druidv1alpha1.Etcd, image string) *batchv1.Job 
 // buildJobArgs constructs the command-line arguments for the member-remove container.
 func (h *handler) buildJobArgs(etcd *druidv1alpha1.Etcd) []string {
 	clientPort := ptr.Deref(etcd.Spec.Etcd.ClientPort, common.DefaultPortEtcdClient)
-	clientSvcName := druidv1alpha1.GetClientServiceName(etcd.ObjectMeta)
-	endpoint := fmt.Sprintf("%s://%s.%s.svc:%d", h.getScheme(etcd), clientSvcName, etcd.Namespace, clientPort)
+	// Connect directly to the surviving member (lowest ordinal) via pod DNS to ensure
+	// MemberRemove operations are committed by the member that will remain after scale-down.
+	survivingPodName := druidv1alpha1.GetOrdinalPodName(etcd.ObjectMeta, 0)
+	peerSvcName := druidv1alpha1.GetPeerServiceName(etcd.ObjectMeta)
+	endpoint := fmt.Sprintf("%s://%s.%s.%s.svc:%d", h.getScheme(etcd), survivingPodName, peerSvcName, etcd.Namespace, clientPort)
 
 	// Build member identifiers in format "name=peerURL"
 	var members []string
