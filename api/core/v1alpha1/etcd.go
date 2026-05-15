@@ -268,6 +268,16 @@ type EtcdConfig struct {
 	// ClientService defines the parameters of the client service that a user can specify
 	// +optional
 	ClientService *ClientService `json:"clientService,omitempty"`
+	// AdditionalAdvertisePeerURLs defines additional peer URLs per member for cross-cluster communication.
+	// +optional
+	// +kubebuilder:validation:MaxItems=10
+	AdditionalAdvertisePeerURLs []MemberPeerURLs `json:"additionalAdvertisePeerURLs,omitempty"`
+	// BootstrapWithExistingCluster configures this etcd to join an existing cluster.
+	// +optional
+	BootstrapWithExistingCluster *BootstrapWithExistingCluster `json:"bootstrapWithExistingCluster,omitempty"`
+	// Config holds strongly-typed etcd server tuning flags.
+	// +optional
+	Config *EtcdServerConfig `json:"config,omitempty"`
 }
 
 // ClientService defines the parameters of the client service that a user can specify
@@ -283,6 +293,62 @@ type ClientService struct {
 	// +optional
 	// +kubebuilder:validation:Enum=PreferSameZone;PreferSameNode;PreferClose
 	TrafficDistribution *string `json:"trafficDistribution,omitempty"`
+}
+
+// MemberPeerURLs defines additional peer URLs for a specific etcd member.
+type MemberPeerURLs struct {
+	// MemberName is the name of the etcd member (must match a pod name: <etcd-name>-<ordinal>).
+	// +required
+	// +kubebuilder:validation:Pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?-[0-9]+$"
+	// +kubebuilder:validation:MaxLength=253
+	MemberName string `json:"memberName"`
+	// URLs are the additional peer URLs to advertise for this member.
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=5
+	// +listType=atomic
+	URLs []string `json:"urls"`
+}
+
+// BootstrapExistingMember represents an existing etcd member in a source cluster.
+type BootstrapExistingMember struct {
+	// Name is the etcd member name in the source cluster.
+	// +required
+	Name string `json:"name"`
+	// PeerURLs are the peer URLs of this member.
+	// +required
+	PeerURLs []string `json:"peerUrls"`
+}
+
+// BootstrapWithExistingCluster configures bootstrapping by joining an existing etcd cluster.
+type BootstrapWithExistingCluster struct {
+	// Members are the existing etcd members of the source cluster.
+	// +optional
+	Members []BootstrapExistingMember `json:"members,omitempty"`
+	// ClientEndpoints are the client endpoints of the source cluster for member management.
+	// +optional
+	ClientEndpoints []string `json:"clientEndpoints,omitempty"`
+}
+
+// BootstrapJoinedMember records a member that was registered with the source cluster.
+type BootstrapJoinedMember struct {
+	Name               string      `json:"name"`
+	PeerURLs           []string    `json:"peerUrls,omitempty"`
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+}
+
+// BootstrapWithExistingClusterStatus tracks bootstrap join state.
+type BootstrapWithExistingClusterStatus struct {
+	JoinedWith []BootstrapJoinedMember `json:"joinedWith,omitempty"`
+}
+
+// EtcdServerConfig holds strongly-typed etcd server tuning flags.
+type EtcdServerConfig struct {
+	// PeerSkipClientSanVerification skips SAN verification of client certificates
+	// presented by peers during TLS handshake.
+	// Maps to --peer-skip-client-san-verification (etcd 3.5+).
+	// +optional
+	PeerSkipClientSanVerification *bool `json:"peerSkipClientSanVerification,omitempty"`
 }
 
 // SharedConfig defines parameters shared and used by Etcd as well as backup-restore sidecar.
@@ -366,6 +432,10 @@ type EtcdSpec struct {
 	// +optional
 	// +listType=set
 	ExternallyManagedMemberAddresses []string `json:"externallyManagedMemberAddresses,omitempty"`
+	// MemberNamePrefix defines an optional prefix for etcd member names.
+	// When set, member names become <prefix>-<pod-name> instead of the pod name.
+	// +optional
+	MemberNamePrefix *string `json:"memberNamePrefix,omitempty"`
 }
 
 // CrossVersionObjectReference contains enough information to let you identify the referred resource.
@@ -399,6 +469,10 @@ const (
 	ConditionTypeDataVolumesReady ConditionType = "DataVolumesReady"
 	// ConditionTypeClusterIDMismatch is a constant for a condition type indicating that the etcd cluster has multiple cluster IDs.
 	ConditionTypeClusterIDMismatch ConditionType = "ClusterIDMismatch"
+	// ConditionTypeScaleOperationInProgress indicates that a scale operation is currently in progress.
+	ConditionTypeScaleOperationInProgress ConditionType = "ScaleOperationInProgress"
+	// ConditionTypeBootstrapWithExistingCluster indicates the bootstrap join state.
+	ConditionTypeBootstrapWithExistingCluster ConditionType = "BootstrapWithExistingCluster"
 )
 
 // EtcdMemberConditionStatus is the status of an etcd cluster member.
@@ -425,7 +499,8 @@ const (
 
 // EtcdMemberStatus holds information about etcd cluster membership.
 type EtcdMemberStatus struct {
-	// Name is the name of the etcd member. It is the name of the backing `Pod`.
+	// Name is the name of the etcd member. It matches the member lease name.
+	// When MemberNamePrefix is set, it is `<prefix>-<pod-name>`, otherwise it is the name of the backing Pod.
 	Name string `json:"name"`
 	// ID is the ID of the etcd member.
 	// +optional
@@ -484,6 +559,9 @@ type EtcdStatus struct {
 	// It must match the pod template's labels.
 	// +optional
 	Selector *string `json:"selector,omitempty"`
+	// BootstrapWithExistingClusterMembers tracks which source members were joined.
+	// +optional
+	BootstrapWithExistingClusterMembers *BootstrapWithExistingClusterStatus `json:"bootstrapWithExistingClusterMembers,omitempty"`
 }
 
 const (

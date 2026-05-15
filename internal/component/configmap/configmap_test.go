@@ -149,6 +149,83 @@ func TestSyncWhenNoConfigMapExists(t *testing.T) {
 	}
 }
 
+func TestPeerSkipClientSanVerification(t *testing.T) {
+	testCases := []struct {
+		name           string
+		peerTLSEnabled bool
+		skipSanVerify  *bool
+		expectField    bool
+	}{
+		{
+			name:           "should add skip-client-san-verification when enabled with peer TLS",
+			peerTLSEnabled: true,
+			skipSanVerify:  ptr.To(true),
+			expectField:    true,
+		},
+		{
+			name:           "should add skip-client-san-verification when enabled without peer TLS",
+			peerTLSEnabled: false,
+			skipSanVerify:  ptr.To(true),
+			expectField:    true,
+		},
+		{
+			name:           "should not add skip-client-san-verification when disabled",
+			peerTLSEnabled: true,
+			skipSanVerify:  ptr.To(false),
+			expectField:    false,
+		},
+		{
+			name:           "should not add skip-client-san-verification when nil",
+			peerTLSEnabled: true,
+			skipSanVerify:  nil,
+			expectField:    false,
+		},
+	}
+	g := NewWithT(t)
+	t.Parallel()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			etcdBuilder := testutils.EtcdBuilderWithDefaults(testutils.TestEtcdName, testutils.TestNamespace).WithReplicas(3)
+			if tc.peerTLSEnabled {
+				etcdBuilder.WithPeerTLS()
+			}
+			if tc.skipSanVerify != nil {
+				etcdBuilder.WithPeerSkipClientSanVerification(*tc.skipSanVerify)
+			}
+			etcd := etcdBuilder.Build()
+			cl := testutils.CreateTestFakeClientForObjects(nil, nil, nil, nil, nil, getObjectKey(etcd.ObjectMeta))
+			operator := New(cl)
+			opCtx := component.NewOperatorContext(context.Background(), logr.Discard(), uuid.NewString())
+			syncErr := operator.Sync(opCtx, etcd)
+			g.Expect(syncErr).NotTo(HaveOccurred())
+			latestConfigMap, getErr := getLatestConfigMap(cl, etcd)
+			g.Expect(getErr).NotTo(HaveOccurred())
+			g.Expect(latestConfigMap).NotTo(BeNil())
+
+			actualETCDConfigYAML := latestConfigMap.Data[common.EtcdConfigFileName]
+			actualETCDConfig := make(map[string]any)
+			err := yaml.Unmarshal([]byte(actualETCDConfigYAML), &actualETCDConfig)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectField {
+				peerSecurity, hasPeerSecurity := actualETCDConfig["peer-transport-security"]
+				g.Expect(hasPeerSecurity).To(BeTrue(), "expected peer-transport-security section to exist")
+				peerSecurityMap, ok := peerSecurity.(map[string]any)
+				g.Expect(ok).To(BeTrue())
+				g.Expect(peerSecurityMap).To(HaveKeyWithValue("skip-client-san-verification", true))
+			} else {
+				if peerSecurity, hasPeerSecurity := actualETCDConfig["peer-transport-security"]; hasPeerSecurity {
+					peerSecurityMap, ok := peerSecurity.(map[string]any)
+					if ok {
+						g.Expect(peerSecurityMap).NotTo(HaveKey("skip-client-san-verification"))
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestPrepareInitialCluster(t *testing.T) {
 	testCases := []struct {
 		name                             string

@@ -50,15 +50,17 @@ type etcdConfig struct {
 	ClientSecurity          *securityConfig              `json:"client-transport-security,omitempty"`
 	PeerSecurity            *securityConfig              `json:"peer-transport-security,omitempty"`
 	//TODO: (@Shreyas-s14): remove this field once etcd 3.5.26 is the minimum supported version.
-	NextClusterVersionCompatible bool `json:"next-cluster-version-compatible,omitempty"`
+	NextClusterVersionCompatible bool   `json:"next-cluster-version-compatible,omitempty"`
+	MemberNamePrefix             string `json:"member-name-prefix,omitempty"`
 }
 
 type securityConfig struct {
-	CertFile       string `json:"cert-file,omitempty"`
-	KeyFile        string `json:"key-file,omitempty"`
-	ClientCertAuth bool   `json:"client-cert-auth,omitempty"`
-	TrustedCAFile  string `json:"trusted-ca-file,omitempty"`
-	AutoTLS        bool   `json:"auto-tls"`
+	CertFile                  string `json:"cert-file,omitempty"`
+	KeyFile                   string `json:"key-file,omitempty"`
+	ClientCertAuth            bool   `json:"client-cert-auth,omitempty"`
+	TrustedCAFile             string `json:"trusted-ca-file,omitempty"`
+	AutoTLS                   bool   `json:"auto-tls"`
+	SkipClientSanVerification bool   `json:"skip-client-san-verification,omitempty"`
 }
 
 func createEtcdConfig(etcd *druidv1alpha1.Etcd) *etcdConfig {
@@ -85,6 +87,21 @@ func createEtcdConfig(etcd *druidv1alpha1.Etcd) *etcdConfig {
 	}
 	cfg.PeerSecurity = peerSecurityConfig
 	cfg.ClientSecurity = clientSecurityConfig
+
+	if etcd.Spec.Etcd.Config != nil && ptr.Deref(etcd.Spec.Etcd.Config.PeerSkipClientSanVerification, false) {
+		if cfg.PeerSecurity == nil {
+			cfg.PeerSecurity = &securityConfig{}
+		}
+		cfg.PeerSecurity.SkipClientSanVerification = true
+	}
+
+	if etcd.Spec.MemberNamePrefix != nil {
+		cfg.MemberNamePrefix = *etcd.Spec.MemberNamePrefix
+	}
+
+	if etcd.Spec.Etcd.BootstrapWithExistingCluster != nil && len(etcd.Spec.Etcd.BootstrapWithExistingCluster.Members) > 0 {
+		cfg.InitialClusterState = "existing"
+	}
 
 	return cfg
 }
@@ -125,12 +142,28 @@ func prepareInitialCluster(etcd *druidv1alpha1.Etcd, peerScheme string) string {
 		domainName := fmt.Sprintf("%s.%s.%s", druidv1alpha1.GetPeerServiceName(etcd.ObjectMeta), etcd.Namespace, "svc")
 		for i := range int(etcd.Spec.Replicas) {
 			podName := druidv1alpha1.GetOrdinalPodName(etcd.ObjectMeta, i)
-			builder.WriteString(fmt.Sprintf("%s=%s://%s.%s:%s,", podName, peerScheme, podName, domainName, serverPort))
+			memberName := druidv1alpha1.GetMemberName(etcd.Spec.MemberNamePrefix, podName)
+			builder.WriteString(fmt.Sprintf("%s=%s://%s.%s:%s,", memberName, peerScheme, podName, domainName, serverPort))
+			// Append additional peer URLs for this member
+			for _, memberURLs := range etcd.Spec.Etcd.AdditionalAdvertisePeerURLs {
+				if memberURLs.MemberName == podName {
+					for _, url := range memberURLs.URLs {
+						builder.WriteString(fmt.Sprintf("%s=%s,", podName, url))
+					}
+					break
+				}
+			}
 		}
 	} else {
 		for _, memberAddress := range etcd.Spec.ExternallyManagedMemberAddresses {
 			memberName := druidv1alpha1.GetMemberNameFromAddress(etcd.ObjectMeta, memberAddress)
 			builder.WriteString(fmt.Sprintf("%s=%s://%s:%s,", memberName, peerScheme, memberAddress, serverPort))
+		}
+	}
+	// Append source cluster members for bootstrap join
+	if etcd.Spec.Etcd.BootstrapWithExistingCluster != nil {
+		for _, m := range etcd.Spec.Etcd.BootstrapWithExistingCluster.Members {
+			builder.WriteString(fmt.Sprintf("%s=%s,", m.Name, strings.Join(m.PeerURLs, ",")))
 		}
 	}
 	return strings.Trim(builder.String(), ",")
@@ -152,7 +185,17 @@ func getAdvertiseURLs(etcd *druidv1alpha1.Etcd, advertiseURLType, scheme, peerSv
 		domainName := fmt.Sprintf("%s.%s.%s", peerSvcName, etcd.Namespace, "svc")
 		for i := range int(etcd.Spec.Replicas) {
 			podName := druidv1alpha1.GetOrdinalPodName(etcd.ObjectMeta, i)
-			advUrlsMap[podName] = []string{fmt.Sprintf("%s://%s.%s:%d", scheme, podName, domainName, port)}
+			memberName := druidv1alpha1.GetMemberName(etcd.Spec.MemberNamePrefix, podName)
+			advUrlsMap[memberName] = []string{fmt.Sprintf("%s://%s.%s:%d", scheme, podName, domainName, port)}
+			// Append additional peer URLs for this member (only for peer type)
+			if advertiseURLType == advertiseURLTypePeer {
+				for _, memberURLs := range etcd.Spec.Etcd.AdditionalAdvertisePeerURLs {
+					if memberURLs.MemberName == podName {
+						advUrlsMap[podName] = append(advUrlsMap[podName], memberURLs.URLs...)
+						break
+					}
+				}
+			}
 		}
 	} else {
 		for _, memberAddress := range etcd.Spec.ExternallyManagedMemberAddresses {

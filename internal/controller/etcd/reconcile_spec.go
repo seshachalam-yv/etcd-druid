@@ -30,6 +30,7 @@ func (r *Reconciler) reconcileSpec(ctx component.OperatorContext, etcd *druidv1a
 	reconcileStepFns := []reconcileFn{
 		r.recordReconcileStartOperation,
 		r.ensureFinalizer,
+		r.reconcilePreSyncScaleDown,
 		r.preSyncEtcdResources,
 		r.syncEtcdResources,
 		r.recordReconcileSuccessOperation,

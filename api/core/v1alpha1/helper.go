@@ -57,6 +57,11 @@ func GetCompactionJobName(etcdObjMeta metav1.ObjectMeta) string {
 	return fmt.Sprintf("%s-compactor", etcdObjMeta.Name)
 }
 
+// GetMemberRemoveJobName returns the name of the Job used for member removal.
+func GetMemberRemoveJobName(etcdObjMeta metav1.ObjectMeta) string {
+	return etcdObjMeta.Name + "-member-remove"
+}
+
 // GetOrdinalPodName returns the Etcd pod name based on the ordinal.
 func GetOrdinalPodName(etcdObjMeta metav1.ObjectMeta, ordinal int) string {
 	return fmt.Sprintf("%s-%d", etcdObjMeta.Name, ordinal)
@@ -76,10 +81,24 @@ func GetAllPodNames(etcdObjMeta metav1.ObjectMeta, replicas int32) []string {
 	return podNames
 }
 
+// GetMemberName returns the etcd member name for a given pod. If memberNamePrefix is set,
+// the member name is <prefix>-<podName>, otherwise it is the podName.
+func GetMemberName(memberNamePrefix *string, podName string) string {
+	if memberNamePrefix != nil && *memberNamePrefix != "" {
+		return *memberNamePrefix + "-" + podName
+	}
+	return podName
+}
+
 // GetMemberLeaseNames returns the name of member leases for the Etcd.
 func GetMemberLeaseNames(etcd *Etcd) []string {
 	if ArePodsManagedByEtcdDruid(etcd) {
-		return GetAllPodNames(etcd.ObjectMeta, etcd.Spec.Replicas)
+		leaseNames := make([]string, 0, etcd.Spec.Replicas)
+		for i := range int(etcd.Spec.Replicas) {
+			podName := GetOrdinalPodName(etcd.ObjectMeta, i)
+			leaseNames = append(leaseNames, GetMemberName(etcd.Spec.MemberNamePrefix, podName))
+		}
+		return leaseNames
 	} else {
 		memberAddresses := etcd.Spec.ExternallyManagedMemberAddresses
 		memberNames := make([]string, len(memberAddresses))

@@ -12,6 +12,7 @@ import (
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/controller/etcdopstask/handler"
 	"github.com/gardener/etcd-druid/internal/controller/etcdopstask/handler/ondemandsnapshot"
+	"github.com/gardener/etcd-druid/internal/controller/etcdopstask/handler/removemembers"
 	ctrlutils "github.com/gardener/etcd-druid/internal/controller/utils"
 
 	"github.com/go-logr/logr"
@@ -53,6 +54,8 @@ func NewReconcilerWithTaskHandlerRegistry(mgr manager.Manager, cfg *druidconfigv
 
 // +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdopstasks,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcdopstasks/status,verbs=get;create;update;patch
+// +kubebuilder:rbac:groups=druid.gardener.cloud,resources=etcds,verbs=get;list
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;create;list;watch;delete
 
 // Reconcile is the main reconciliation loop for EtcdOpsTask resources.
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
@@ -94,6 +97,8 @@ func (r *Reconciler) getTaskHandler(task *druidv1alpha1.EtcdOpsTask) (handler.Ha
 	switch {
 	case config.OnDemandSnapshot != nil:
 		return r.taskHandlerRegistry.GetHandler("OnDemandSnapshot", r.client, task, nil)
+	case config.RemoveMembers != nil:
+		return r.taskHandlerRegistry.GetHandler("RemoveMembers", r.client, task, nil)
 	default:
 		return nil, fmt.Errorf("unsupported task configuration: no valid task type found")
 	}
@@ -109,6 +114,8 @@ func DefaultTaskHandlerRegistry() handler.TaskHandlerRegistry {
 
 	// Register OnDemandSnapshot handler
 	registry.Register("OnDemandSnapshot", ondemandsnapshot.New)
+	// Register RemoveMembers handler
+	registry.Register("RemoveMembers", removemembers.New)
 	return registry
 }
 

@@ -472,6 +472,73 @@ _Appears in:_
 | `leaderElection` _[LeaderElectionSpec](#leaderelectionspec)_ | LeaderElection defines parameters related to the LeaderElection configuration. |  |  |
 
 
+#### BootstrapExistingMember
+
+
+
+BootstrapExistingMember represents an existing etcd member in a source cluster.
+
+
+
+_Appears in:_
+- [BootstrapWithExistingCluster](#bootstrapwithexistingcluster)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the etcd member name in the source cluster. |  |  |
+| `peerUrls` _string array_ | PeerURLs are the peer URLs of this member. |  |  |
+
+
+#### BootstrapJoinedMember
+
+
+
+BootstrapJoinedMember records a member that was registered with the source cluster.
+
+
+
+_Appears in:_
+- [BootstrapWithExistingClusterStatus](#bootstrapwithexistingclusterstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  |  |
+| `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ |  |  |  |
+
+
+#### BootstrapWithExistingCluster
+
+
+
+BootstrapWithExistingCluster configures bootstrapping by joining an existing etcd cluster.
+
+
+
+_Appears in:_
+- [EtcdConfig](#etcdconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `members` _[BootstrapExistingMember](#bootstrapexistingmember) array_ | Members are the existing etcd members of the source cluster. |  |  |
+| `clientEndpoints` _string array_ | ClientEndpoints are the client endpoints of the source cluster for member management. |  |  |
+
+
+#### BootstrapWithExistingClusterStatus
+
+
+
+BootstrapWithExistingClusterStatus tracks bootstrap join state.
+
+
+
+_Appears in:_
+- [EtcdStatus](#etcdstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `joinedWith` _[BootstrapJoinedMember](#bootstrapjoinedmember) array_ |  |  |  |
+
+
 #### ClientService
 
 
@@ -607,6 +674,8 @@ _Appears in:_
 | `BackupReady` | ConditionTypeBackupReady is a constant for a condition type indicating that the etcd backup is ready.<br /> |
 | `DataVolumesReady` | ConditionTypeDataVolumesReady is a constant for a condition type indicating that the etcd data volumes are ready.<br /> |
 | `ClusterIDMismatch` | ConditionTypeClusterIDMismatch is a constant for a condition type indicating that the etcd cluster has multiple cluster IDs.<br /> |
+| `ScaleOperationInProgress` | ConditionTypeScaleOperationInProgress indicates that a scale operation is currently in progress.<br /> |
+| `BootstrapWithExistingCluster` | ConditionTypeBootstrapWithExistingCluster indicates the bootstrap join state.<br /> |
 | `Succeeded` | EtcdCopyBackupsTaskSucceeded is a condition type indicating that a EtcdCopyBackupsTask has succeeded.<br /> |
 | `Failed` | EtcdCopyBackupsTaskFailed is a condition type indicating that a EtcdCopyBackupsTask has failed.<br /> |
 
@@ -677,6 +746,9 @@ _Appears in:_
 | `etcdDefragTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdDefragTimeout defines the timeout duration for etcd defrag call |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `heartbeatDuration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | HeartbeatDuration defines the duration for members to send heartbeats. The default value is 10s. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `clientService` _[ClientService](#clientservice)_ | ClientService defines the parameters of the client service that a user can specify |  |  |
+| `additionalAdvertisePeerURLs` _[MemberPeerURLs](#memberpeerurls) array_ | AdditionalAdvertisePeerURLs defines additional peer URLs per member for cross-cluster communication. |  | MaxItems: 10 <br /> |
+| `bootstrapWithExistingCluster` _[BootstrapWithExistingCluster](#bootstrapwithexistingcluster)_ | BootstrapWithExistingCluster configures this etcd to join an existing cluster. |  |  |
+| `config` _[EtcdServerConfig](#etcdserverconfig)_ | Config holds strongly-typed etcd server tuning flags. |  |  |
 
 
 #### EtcdCopyBackupsTask
@@ -768,7 +840,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `name` _string_ | Name is the name of the etcd member. It is the name of the backing `Pod`. |  |  |
+| `name` _string_ | Name is the name of the etcd member. It matches the member lease name.<br />When MemberNamePrefix is set, it is `<prefix>-<pod-name>`, otherwise it is the name of the backing Pod. |  |  |
 | `id` _string_ | ID is the ID of the etcd member. |  |  |
 | `role` _[EtcdRole](#etcdrole)_ | Role is the role in the etcd cluster, either `Leader` or `Member`. |  |  |
 | `status` _[EtcdMemberConditionStatus](#etcdmemberconditionstatus)_ | Status of the condition, one of True, False, Unknown. |  |  |
@@ -813,6 +885,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `onDemandSnapshot` _[OnDemandSnapshotConfig](#ondemandsnapshotconfig)_ | OnDemandSnapshot defines the configuration for an on-demand snapshot task. |  |  |
+| `removeMembers` _[RemoveMembersConfig](#removemembersconfig)_ | RemoveMembers defines the configuration for removing members from the etcd cluster. |  |  |
 
 
 #### EtcdOpsTaskSpec
@@ -870,6 +943,22 @@ _Appears in:_
 | `Member` | EtcdRoleMember describes the etcd role `Member`.<br /> |
 
 
+#### EtcdServerConfig
+
+
+
+EtcdServerConfig holds strongly-typed etcd server tuning flags.
+
+
+
+_Appears in:_
+- [EtcdConfig](#etcdconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `peerSkipClientSanVerification` _boolean_ | PeerSkipClientSanVerification skips SAN verification of client certificates<br />presented by peers during TLS handshake.<br />Maps to --peer-skip-client-san-verification (etcd 3.5+). |  |  |
+
+
 #### EtcdSpec
 
 
@@ -897,6 +986,7 @@ _Appears in:_
 | `volumeClaimTemplate` _string_ | VolumeClaimTemplate defines the volume claim template to be created |  |  |
 | `runAsRoot` _boolean_ | RunAsRoot defines whether the securityContext of the pod specification should indicate that the containers shall<br />run as root. By default, they run as non-root with user 'nobody'. |  |  |
 | `externallyManagedMemberAddresses` _string array_ | ExternallyManagedMemberAddresses defines the list of addresses of externally managed etcd members. Specifying this<br />will disable components that are involved in management of etcd members like Pods, Services and PDBs.<br />Allowed values include: IPv4/IPv6 addresses and hostnames. Protocol or port shall not be specified. |  |  |
+| `memberNamePrefix` _string_ | MemberNamePrefix defines an optional prefix for etcd member names.<br />When set, member names become <prefix>-<pod-name> instead of the pod name. |  |  |
 
 
 #### EtcdStatus
@@ -925,6 +1015,7 @@ _Appears in:_
 | `members` _[EtcdMemberStatus](#etcdmemberstatus) array_ | Members represents the members of the etcd cluster |  |  |
 | `peerUrlTLSEnabled` _boolean_ | PeerUrlTLSEnabled captures the state of peer url TLS being enabled for the etcd member(s) |  |  |
 | `selector` _string_ | Selector is a label query over pods that should match the replica count.<br />It must match the pod template's labels. |  |  |
+| `bootstrapWithExistingClusterMembers` _[BootstrapWithExistingClusterStatus](#bootstrapwithexistingclusterstatus)_ | BootstrapWithExistingClusterMembers tracks which source members were joined. |  |  |
 
 
 #### GarbageCollectionPolicy
@@ -956,6 +1047,40 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `reelectionPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | ReelectionPeriod defines the Period after which leadership status of corresponding etcd is checked. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `etcdConnectionTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdConnectionTimeout defines the timeout duration for etcd client connection during leader election. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
+
+
+#### MemberPeerURLs
+
+
+
+MemberPeerURLs defines additional peer URLs for a specific etcd member.
+
+
+
+_Appears in:_
+- [EtcdConfig](#etcdconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `memberName` _string_ | MemberName is the name of the etcd member (must match a pod name: <etcd-name>-<ordinal>). |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?-[0-9]+$` <br /> |
+| `urls` _string array_ | URLs are the additional peer URLs to advertise for this member. |  | MaxItems: 5 <br />MinItems: 1 <br /> |
+
+
+#### MemberToRemove
+
+
+
+MemberToRemove identifies an etcd member to be removed.
+
+
+
+_Appears in:_
+- [RemoveMembersConfig](#removemembersconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the pod name of the member. |  |  |
+| `peerURL` _string_ | PeerURL is the peer URL of the member. |  |  |
 
 
 #### MetricsLevel
@@ -1011,6 +1136,22 @@ _Appears in:_
 | --- | --- |
 | `full` | OnDemandSnapshotTypeFull indicates a full snapshot, capturing the entire etcd database state.<br /> |
 | `delta` | OnDemandSnapshotTypeDelta indicates a delta snapshot, capturing only changes since the last snapshot.<br /> |
+
+
+#### RemoveMembersConfig
+
+
+
+RemoveMembersConfig holds configuration for a RemoveMembers operation.
+
+
+
+_Appears in:_
+- [EtcdOpsTaskConfig](#etcdopstaskconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `membersToRemove` _[MemberToRemove](#membertoremove) array_ | MembersToRemove lists the members to be removed from the etcd cluster. |  | MinItems: 1 <br /> |
 
 
 #### SchedulingConstraints

@@ -521,6 +521,18 @@ func (eb *EtcdBuilder) WithExternallyManagedMembers(addresses []string) *EtcdBui
 	return eb
 }
 
+// WithPeerSkipClientSanVerification sets the PeerSkipClientSanVerification in the etcd config.
+func (eb *EtcdBuilder) WithPeerSkipClientSanVerification(skip bool) *EtcdBuilder {
+	if eb == nil || eb.etcd == nil {
+		return nil
+	}
+	if eb.etcd.Spec.Etcd.Config == nil {
+		eb.etcd.Spec.Etcd.Config = &druidv1alpha1.EtcdServerConfig{}
+	}
+	eb.etcd.Spec.Etcd.Config.PeerSkipClientSanVerification = ptr.To(skip)
+	return eb
+}
+
 // WithDefaultBackup creates a default backup spec and initializes etcd with it.
 func (eb *EtcdBuilder) WithDefaultBackup() *EtcdBuilder {
 	eb.etcd.Spec.Backup = getBackupSpec()

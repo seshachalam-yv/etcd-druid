@@ -46,8 +46,9 @@ const (
 	ErrGetEtcdWrapperImage druidapicommon.ErrorCode = "ERR_GET_ETCD_WRAPPER_IMAGE"
 
 	// Pre-sync snapshot task constants
-	preSyncTaskPrefixHibernation = "presync-snapshot-hibernation-"
-	preSyncTaskPrefixUpgrade     = "presync-snapshot-upgrade-"
+	preSyncTaskPrefixHibernation    = "presync-snapshot-hibernation-"
+	preSyncTaskPrefixUpgrade        = "presync-snapshot-upgrade-"
+	preSyncTaskPrefixMemberRemoval  = "presync-member-removal-"
 	// maxPreSyncRetries defines the maximum number of pre-sync snapshot attempts before giving up and proceeding with the upgrade.
 	maxPreSyncRetries = 3
 )
@@ -101,6 +102,11 @@ func (r _resource) PreSync(ctx component.OperatorContext, etcd *druidv1alpha1.Et
 
 	if existingSts == nil || ptr.Deref(existingSts.Spec.Replicas, 0) == 0 {
 		return nil
+	}
+
+	// Detect scale-down
+	if etcd.Spec.Replicas > 0 && *existingSts.Spec.Replicas > etcd.Spec.Replicas {
+		return r.ensurePreSyncMemberRemoval(ctx, etcd, existingSts)
 	}
 
 	if etcd.Spec.Replicas == 0 {
@@ -500,4 +506,97 @@ func getObjectKey(obj metav1.ObjectMeta) client.ObjectKey {
 		Name:      obj.Name,
 		Namespace: obj.Namespace,
 	}
+}
+
+// ensurePreSyncMemberRemoval ensures that an EtcdOpsTask for member removal is created and completed before allowing scale-down.
+func (r _resource) ensurePreSyncMemberRemoval(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, existingSts *appsv1.StatefulSet) error {
+	membersToRemove := getMembersToRemove(etcd, *existingSts.Spec.Replicas)
+	if len(membersToRemove) == 0 {
+		return nil
+	}
+	// Create or check the EtcdOpsTask for member removal
+	taskName := fmt.Sprintf("%s%s", preSyncTaskPrefixMemberRemoval, etcd.Name)
+	task := &druidv1alpha1.EtcdOpsTask{}
+	if err := r.client.Get(ctx, client.ObjectKey{Namespace: etcd.Namespace, Name: taskName}, task); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return druiderr.WrapError(err, ErrGetEtcdOpsTask, component.OperationPreSync,
+				fmt.Sprintf("Error getting member removal EtcdOpsTask %s for etcd: %v", taskName, client.ObjectKeyFromObject(etcd)))
+		}
+		// Create new task
+		task = &druidv1alpha1.EtcdOpsTask{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            taskName,
+				Namespace:       etcd.Namespace,
+				OwnerReferences: []metav1.OwnerReference{druidv1alpha1.GetAsOwnerReference(etcd.ObjectMeta)},
+			},
+			Spec: druidv1alpha1.EtcdOpsTaskSpec{
+				Config: druidv1alpha1.EtcdOpsTaskConfig{
+					RemoveMembers: &druidv1alpha1.RemoveMembersConfig{
+						MembersToRemove: membersToRemove,
+					},
+				},
+				EtcdName: ptr.To(etcd.Name),
+			},
+		}
+		if err := r.client.Create(ctx, task); err != nil {
+			return druiderr.WrapError(err, ErrCreateEtcdOpsTask, component.OperationPreSync,
+				fmt.Sprintf("Failed to create member removal EtcdOpsTask %s for etcd: %v", taskName, client.ObjectKeyFromObject(etcd)))
+		}
+		return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
+			fmt.Sprintf("Waiting for member removal task %s to complete", taskName))
+	}
+	// Check task status
+	if task.Status.State != nil {
+		switch *task.Status.State {
+		case druidv1alpha1.TaskStateSucceeded:
+			return nil // Proceed with scale-down
+		case druidv1alpha1.TaskStateFailed, druidv1alpha1.TaskStateRejected:
+			return fmt.Errorf("member removal task %s failed with state %s", taskName, *task.Status.State)
+		}
+	}
+	return druiderr.New(druiderr.ErrRequeueAfter, component.OperationPreSync,
+		fmt.Sprintf("Waiting for member removal task %s to complete", taskName))
+}
+
+func getMembersToRemove(etcd *druidv1alpha1.Etcd, currentReplicas int32) []druidv1alpha1.MemberToRemove {
+	peerScheme := "http"
+	if etcd.Spec.Etcd.PeerUrlTLS != nil {
+		peerScheme = "https"
+	}
+	peerSvcName := druidv1alpha1.GetPeerServiceName(etcd.ObjectMeta)
+	serverPort := ptr.Deref(etcd.Spec.Etcd.ServerPort, int32(2380))
+	domainName := fmt.Sprintf("%s.%s.svc", peerSvcName, etcd.Namespace)
+
+	var members []druidv1alpha1.MemberToRemove
+	for i := currentReplicas - 1; i >= etcd.Spec.Replicas; i-- {
+		podName := druidv1alpha1.GetOrdinalPodName(etcd.ObjectMeta, int(i))
+		peerURL := fmt.Sprintf("%s://%s.%s:%d", peerScheme, podName, domainName, serverPort)
+		members = append(members, druidv1alpha1.MemberToRemove{
+			Name:    podName,
+			PeerURL: peerURL,
+		})
+	}
+	return members
+}
+
+// deleteScaleDownPVCs deletes PVCs that are no longer needed after a scale-down operation.
+func (r _resource) deleteScaleDownPVCs(ctx component.OperatorContext, etcd *druidv1alpha1.Etcd, oldReplicas, newReplicas int32) error {
+	if newReplicas >= oldReplicas || newReplicas == 0 {
+		return nil
+	}
+	stsName := druidv1alpha1.GetStatefulSetName(etcd.ObjectMeta)
+	volumeClaimTemplateName := ptr.Deref(etcd.Spec.VolumeClaimTemplate, etcd.Name)
+	for i := oldReplicas - 1; i >= newReplicas; i-- {
+		pvcName := fmt.Sprintf("%s-%s-%d", volumeClaimTemplateName, stsName, i)
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pvcName,
+				Namespace: etcd.Namespace,
+			},
+		}
+		if err := r.client.Delete(ctx, pvc); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
 }

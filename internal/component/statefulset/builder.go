@@ -466,14 +466,26 @@ func (b *stsBuilder) getBackupRestoreContainerCommandArgs() []string {
 		commandArgs = append(commandArgs, "--insecure-skip-tls-verify=false")
 		commandArgs = append(commandArgs, fmt.Sprintf("--endpoints=https://%s-local:%d", b.etcd.Name, b.clientPort))
 		if druidv1alpha1.ArePodsManagedByEtcdDruid(b.etcd) {
-			commandArgs = append(commandArgs, fmt.Sprintf("--service-endpoints=https://%s:%d", druidv1alpha1.GetClientServiceName(b.etcd.ObjectMeta), b.clientPort))
+			serviceEndpoints := fmt.Sprintf("https://%s:%d", druidv1alpha1.GetClientServiceName(b.etcd.ObjectMeta), b.clientPort)
+			if b.etcd.Spec.Etcd.BootstrapWithExistingCluster != nil {
+				for _, ep := range b.etcd.Spec.Etcd.BootstrapWithExistingCluster.ClientEndpoints {
+					serviceEndpoints += "," + ep
+				}
+			}
+			commandArgs = append(commandArgs, fmt.Sprintf("--service-endpoints=%s", serviceEndpoints))
 		}
 	} else {
 		commandArgs = append(commandArgs, "--insecure-transport=true")
 		commandArgs = append(commandArgs, "--insecure-skip-tls-verify=true")
 		commandArgs = append(commandArgs, fmt.Sprintf("--endpoints=http://%s-local:%d", b.etcd.Name, b.clientPort))
 		if druidv1alpha1.ArePodsManagedByEtcdDruid(b.etcd) {
-			commandArgs = append(commandArgs, fmt.Sprintf("--service-endpoints=http://%s:%d", druidv1alpha1.GetClientServiceName(b.etcd.ObjectMeta), b.clientPort))
+			serviceEndpoints := fmt.Sprintf("http://%s:%d", druidv1alpha1.GetClientServiceName(b.etcd.ObjectMeta), b.clientPort)
+			if b.etcd.Spec.Etcd.BootstrapWithExistingCluster != nil {
+				for _, ep := range b.etcd.Spec.Etcd.BootstrapWithExistingCluster.ClientEndpoints {
+					serviceEndpoints += "," + ep
+				}
+			}
+			commandArgs = append(commandArgs, fmt.Sprintf("--service-endpoints=%s", serviceEndpoints))
 		}
 	}
 	if b.etcd.Spec.Backup.TLS != nil {
