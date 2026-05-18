@@ -509,6 +509,17 @@ spec:
                     - serverTLSSecretRef
                     - tlsCASecretRef
                     type: object
+                  config:
+                    description: Config holds strongly-typed etcd server tuning flags.
+                    properties:
+                      peerSkipClientSanVerification:
+                        description: |-
+                          PeerSkipClientSanVerification skips SAN verification of client certificates
+                          presented by peers during TLS handshake.
+                          Maps to --peer-skip-client-san-verification (etcd 3.5+) or
+                          --experimental-peer-skip-client-san-verification (etcd 3.4). Defaults to false.
+                        type: boolean
+                    type: object
                   defragmentationSchedule:
                     description: DefragmentationSchedule defines the cron standard
                       schedule for defragmentation of etcd.

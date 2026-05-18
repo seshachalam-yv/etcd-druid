@@ -677,6 +677,7 @@ _Appears in:_
 | `etcdDefragTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdDefragTimeout defines the timeout duration for etcd defrag call |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `heartbeatDuration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | HeartbeatDuration defines the duration for members to send heartbeats. The default value is 10s. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `clientService` _[ClientService](#clientservice)_ | ClientService defines the parameters of the client service that a user can specify |  |  |
+| `config` _[EtcdServerConfig](#etcdserverconfig)_ | Config holds strongly-typed etcd server tuning flags. |  |  |
 
 
 #### EtcdCopyBackupsTask
@@ -868,6 +869,25 @@ _Appears in:_
 | --- | --- |
 | `Leader` | EtcdRoleLeader describes the etcd role `Leader`.<br /> |
 | `Member` | EtcdRoleMember describes the etcd role `Member`.<br /> |
+
+
+#### EtcdServerConfig
+
+
+
+EtcdServerConfig holds strongly-typed etcd server tuning flags that are passed
+directly to the etcd process. Fields here map 1:1 to etcd server flags.
+The version-appropriate flag name is selected at runtime:
+etcd 3.5+ uses the promoted name; etcd 3.4 uses the experimental prefix.
+
+
+
+_Appears in:_
+- [EtcdConfig](#etcdconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `peerSkipClientSanVerification` _boolean_ | PeerSkipClientSanVerification skips SAN verification of client certificates<br />presented by peers during TLS handshake.<br />Maps to --peer-skip-client-san-verification (etcd 3.5+) or<br />--experimental-peer-skip-client-san-verification (etcd 3.4). Defaults to false. |  |  |
 
 
 #### EtcdSpec
