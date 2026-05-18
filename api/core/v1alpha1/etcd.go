@@ -268,6 +268,22 @@ type EtcdConfig struct {
 	// ClientService defines the parameters of the client service that a user can specify
 	// +optional
 	ClientService *ClientService `json:"clientService,omitempty"`
+	// Config holds strongly-typed etcd server tuning flags.
+	// +optional
+	Config *EtcdServerConfig `json:"config,omitempty"`
+}
+
+// EtcdServerConfig holds strongly-typed etcd server tuning flags that are passed
+// directly to the etcd process. Fields here map 1:1 to etcd server flags.
+// The version-appropriate flag name is selected at runtime:
+// etcd 3.5+ uses the promoted name; etcd 3.4 uses the experimental prefix.
+type EtcdServerConfig struct {
+	// PeerSkipClientSanVerification skips SAN verification of client certificates
+	// presented by peers during TLS handshake.
+	// Maps to --peer-skip-client-san-verification (etcd 3.5+) or
+	// --experimental-peer-skip-client-san-verification (etcd 3.4). Defaults to false.
+	// +optional
+	PeerSkipClientSanVerification *bool `json:"peerSkipClientSanVerification,omitempty"`
 }
 
 // ClientService defines the parameters of the client service that a user can specify

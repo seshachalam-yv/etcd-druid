@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 	"github.com/gardener/etcd-druid/internal/component"
@@ -447,5 +448,109 @@ func matchPeerTLSRelatedConfiguration(g *WithT, etcd *druidv1alpha1.Etcd, actual
 			"initial-advertise-peer-urls": Equal(expectedAdvertiseURLsAsInterface(etcd, advertiseURLTypePeer, "http")),
 		}))
 		g.Expect(actualETCDConfig).ToNot(HaveKey("peer-transport-security"))
+	}
+}
+
+// -------------------- TestPeerSkipClientSanVerification --------------------
+
+// TestPeerSkipClientSanVerification verifies that the EtcdServerConfig.PeerSkipClientSanVerification
+// field is correctly translated to either the etcd 3.5+ peer-transport-security.skip-client-san-verification
+// field or the etcd 3.4 top-level experimental-peer-skip-client-san-verification field, based on the
+// UpgradeEtcdVersion feature gate.
+func TestPeerSkipClientSanVerification(t *testing.T) {
+	testCases := []struct {
+		name                          string
+		peerSkipClientSanVerification *bool
+		upgradeEtcdVersionEnabled     bool
+		withPeerTLS                   bool
+		expectTopLevelExperimentalKey bool
+		expectSkipInPeerSecurity      bool
+	}{
+		{
+			name:                          "gate ON, enabled, with peer-TLS - emits skip-client-san-verification inside peer-transport-security",
+			peerSkipClientSanVerification: ptr.To(true),
+			upgradeEtcdVersionEnabled:     true,
+			withPeerTLS:                   true,
+			expectTopLevelExperimentalKey: false,
+			expectSkipInPeerSecurity:      true,
+		},
+		{
+			name:                          "gate ON, enabled, no peer-TLS - allocates peer-transport-security and emits skip-client-san-verification",
+			peerSkipClientSanVerification: ptr.To(true),
+			upgradeEtcdVersionEnabled:     true,
+			withPeerTLS:                   false,
+			expectTopLevelExperimentalKey: false,
+			expectSkipInPeerSecurity:      true,
+		},
+		{
+			name:                          "gate ON, disabled - no skip flags emitted",
+			peerSkipClientSanVerification: ptr.To(false),
+			upgradeEtcdVersionEnabled:     true,
+			withPeerTLS:                   true,
+			expectTopLevelExperimentalKey: false,
+			expectSkipInPeerSecurity:      false,
+		},
+		{
+			name:                          "gate ON, nil - no skip flags emitted",
+			peerSkipClientSanVerification: nil,
+			upgradeEtcdVersionEnabled:     true,
+			withPeerTLS:                   true,
+			expectTopLevelExperimentalKey: false,
+			expectSkipInPeerSecurity:      false,
+		},
+		{
+			name:                          "gate OFF, enabled - emits top-level experimental-peer-skip-client-san-verification",
+			peerSkipClientSanVerification: ptr.To(true),
+			upgradeEtcdVersionEnabled:     false,
+			withPeerTLS:                   true,
+			expectTopLevelExperimentalKey: true,
+			expectSkipInPeerSecurity:      false,
+		},
+		{
+			name:                          "gate OFF, disabled - no skip flags emitted",
+			peerSkipClientSanVerification: ptr.To(false),
+			upgradeEtcdVersionEnabled:     false,
+			withPeerTLS:                   true,
+			expectTopLevelExperimentalKey: false,
+			expectSkipInPeerSecurity:      false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			// Configure the feature gate for this test case.
+			gErr := druidconfigv1alpha1.DefaultFeatureGates.SetEnabledFeaturesFromMap(map[string]bool{
+				druidconfigv1alpha1.UpgradeEtcdVersion: tc.upgradeEtcdVersionEnabled,
+			})
+			g.Expect(gErr).ToNot(HaveOccurred())
+
+			builder := testutils.EtcdBuilderWithoutDefaults(testutils.TestEtcdName, testutils.TestNamespace).WithReplicas(3)
+			if tc.withPeerTLS {
+				builder = builder.WithPeerTLS()
+			}
+			if tc.peerSkipClientSanVerification != nil {
+				builder = builder.WithPeerSkipClientSanVerification(*tc.peerSkipClientSanVerification)
+			}
+			etcd := builder.Build()
+
+			cfg := createEtcdConfig(etcd)
+
+			if tc.expectTopLevelExperimentalKey {
+				g.Expect(cfg.ExperimentalPeerSkipClientSanVerification).To(BeTrue())
+				if cfg.PeerSecurity != nil {
+					g.Expect(cfg.PeerSecurity.SkipClientSanVerification).To(BeFalse())
+				}
+			} else if tc.expectSkipInPeerSecurity {
+				g.Expect(cfg.ExperimentalPeerSkipClientSanVerification).To(BeFalse())
+				g.Expect(cfg.PeerSecurity).ToNot(BeNil())
+				g.Expect(cfg.PeerSecurity.SkipClientSanVerification).To(BeTrue())
+			} else {
+				g.Expect(cfg.ExperimentalPeerSkipClientSanVerification).To(BeFalse())
+				if cfg.PeerSecurity != nil {
+					g.Expect(cfg.PeerSecurity.SkipClientSanVerification).To(BeFalse())
+				}
+			}
+		})
 	}
 }

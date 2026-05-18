@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	druidconfigv1alpha1 "github.com/gardener/etcd-druid/api/config/v1alpha1"
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
 	"github.com/gardener/etcd-druid/internal/common"
 
@@ -51,14 +52,18 @@ type etcdConfig struct {
 	PeerSecurity            *securityConfig              `json:"peer-transport-security,omitempty"`
 	//TODO: (@Shreyas-s14): remove this field once etcd 3.5.26 is the minimum supported version.
 	NextClusterVersionCompatible bool `json:"next-cluster-version-compatible,omitempty"`
+	// ExperimentalPeerSkipClientSanVerification is the etcd 3.4 flag for skipping peer client SAN verification.
+	// In etcd 3.5+ this is promoted to peer-transport-security.skip-client-san-verification instead.
+	ExperimentalPeerSkipClientSanVerification bool `json:"experimental-peer-skip-client-san-verification,omitempty"`
 }
 
 type securityConfig struct {
-	CertFile       string `json:"cert-file,omitempty"`
-	KeyFile        string `json:"key-file,omitempty"`
-	ClientCertAuth bool   `json:"client-cert-auth,omitempty"`
-	TrustedCAFile  string `json:"trusted-ca-file,omitempty"`
-	AutoTLS        bool   `json:"auto-tls"`
+	CertFile                  string `json:"cert-file,omitempty"`
+	KeyFile                   string `json:"key-file,omitempty"`
+	ClientCertAuth            bool   `json:"client-cert-auth,omitempty"`
+	TrustedCAFile             string `json:"trusted-ca-file,omitempty"`
+	AutoTLS                   bool   `json:"auto-tls"`
+	SkipClientSanVerification bool   `json:"skip-client-san-verification,omitempty"`
 }
 
 func createEtcdConfig(etcd *druidv1alpha1.Etcd) *etcdConfig {
@@ -85,6 +90,19 @@ func createEtcdConfig(etcd *druidv1alpha1.Etcd) *etcdConfig {
 	}
 	cfg.PeerSecurity = peerSecurityConfig
 	cfg.ClientSecurity = clientSecurityConfig
+
+	if etcd.Spec.Etcd.Config != nil && ptr.Deref(etcd.Spec.Etcd.Config.PeerSkipClientSanVerification, false) {
+		if druidconfigv1alpha1.DefaultFeatureGates.IsEnabled(druidconfigv1alpha1.UpgradeEtcdVersion) {
+			// etcd 3.5+: field lives inside peer-transport-security
+			if cfg.PeerSecurity == nil {
+				cfg.PeerSecurity = &securityConfig{}
+			}
+			cfg.PeerSecurity.SkipClientSanVerification = true
+		} else {
+			// etcd 3.4: top-level experimental flag
+			cfg.ExperimentalPeerSkipClientSanVerification = true
+		}
+	}
 
 	return cfg
 }
