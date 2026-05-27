@@ -417,6 +417,34 @@ spec:
                           type: string
                       type: object
                       x-kubernetes-map-type: atomic
+                    bootstrapWithExistingCluster:
+                      description: BootstrapWithExistingCluster configures this etcd to join an existing cluster.
+                      properties:
+                        clientEndpoints:
+                          description: ClientEndpoints are the client endpoints of the source cluster for member management.
+                          items:
+                            type: string
+                          type: array
+                        members:
+                          description: Members are the existing etcd members of the source cluster.
+                          items:
+                            description: BootstrapExistingMember represents an existing etcd member in a source cluster.
+                            properties:
+                              name:
+                                description: Name is the etcd member name in the source cluster.
+                                type: string
+                              peerUrls:
+                                description: PeerURLs are the peer URLs of this member.
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                            required:
+                              - name
+                              - peerUrls
+                            type: object
+                          type: array
+                      type: object
                     clientPort:
                       format: int32
                       type: integer
@@ -1811,6 +1839,28 @@ spec:
             status:
               description: EtcdStatus defines the observed state of Etcd.
               properties:
+                bootstrapWithExistingClusterMembers:
+                  description: BootstrapWithExistingClusterMembers tracks which source members were joined.
+                  properties:
+                    joinedWith:
+                      items:
+                        description: BootstrapJoinedMember records a member that was registered with the source cluster.
+                        properties:
+                          lastTransitionTime:
+                            format: date-time
+                            type: string
+                          name:
+                            type: string
+                          peerUrls:
+                            items:
+                              type: string
+                            type: array
+                        required:
+                          - lastTransitionTime
+                          - name
+                        type: object
+                      type: array
+                  type: object
                 conditions:
                   description: Conditions represents the latest available observations of an etcd's current state.
                   items:

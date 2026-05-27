@@ -472,6 +472,74 @@ _Appears in:_
 | `leaderElection` _[LeaderElectionSpec](#leaderelectionspec)_ | LeaderElection defines parameters related to the LeaderElection configuration. |  |  |
 
 
+#### BootstrapExistingMember
+
+
+
+BootstrapExistingMember represents an existing etcd member in a source cluster.
+
+
+
+_Appears in:_
+- [BootstrapWithExistingCluster](#bootstrapwithexistingcluster)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the etcd member name in the source cluster. |  |  |
+| `peerUrls` _string array_ | PeerURLs are the peer URLs of this member. |  | MinItems: 1 <br /> |
+
+
+#### BootstrapJoinedMember
+
+
+
+BootstrapJoinedMember records a member that was registered with the source cluster.
+
+
+
+_Appears in:_
+- [BootstrapWithExistingClusterStatus](#bootstrapwithexistingclusterstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  |  |
+| `peerUrls` _string array_ |  |  |  |
+| `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ |  |  |  |
+
+
+#### BootstrapWithExistingCluster
+
+
+
+BootstrapWithExistingCluster configures bootstrapping by joining an existing etcd cluster.
+
+
+
+_Appears in:_
+- [EtcdConfig](#etcdconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `members` _[BootstrapExistingMember](#bootstrapexistingmember) array_ | Members are the existing etcd members of the source cluster. |  |  |
+| `clientEndpoints` _string array_ | ClientEndpoints are the client endpoints of the source cluster for member management. |  |  |
+
+
+#### BootstrapWithExistingClusterStatus
+
+
+
+BootstrapWithExistingClusterStatus tracks bootstrap join state.
+
+
+
+_Appears in:_
+- [EtcdStatus](#etcdstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `joinedWith` _[BootstrapJoinedMember](#bootstrapjoinedmember) array_ |  |  |  |
+
+
 #### ClientService
 
 
@@ -607,6 +675,7 @@ _Appears in:_
 | `BackupReady` | ConditionTypeBackupReady is a constant for a condition type indicating that the etcd backup is ready.<br /> |
 | `DataVolumesReady` | ConditionTypeDataVolumesReady is a constant for a condition type indicating that the etcd data volumes are ready.<br /> |
 | `ClusterIDMismatch` | ConditionTypeClusterIDMismatch is a constant for a condition type indicating that the etcd cluster has multiple cluster IDs.<br /> |
+| `BootstrapWithExistingCluster` | ConditionTypeBootstrapWithExistingCluster indicates the bootstrap join state.<br /> |
 | `Succeeded` | EtcdCopyBackupsTaskSucceeded is a condition type indicating that a EtcdCopyBackupsTask has succeeded.<br /> |
 | `Failed` | EtcdCopyBackupsTaskFailed is a condition type indicating that a EtcdCopyBackupsTask has failed.<br /> |
 
@@ -678,6 +747,7 @@ _Appears in:_
 | `etcdDefragTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdDefragTimeout defines the timeout duration for etcd defrag call |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `heartbeatDuration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | HeartbeatDuration defines the duration for members to send heartbeats. The default value is 10s. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `clientService` _[ClientService](#clientservice)_ | ClientService defines the parameters of the client service that a user can specify |  |  |
+| `bootstrapWithExistingCluster` _[BootstrapWithExistingCluster](#bootstrapwithexistingcluster)_ | BootstrapWithExistingCluster configures this etcd to join an existing cluster. |  |  |
 
 
 #### EtcdCopyBackupsTask
@@ -926,6 +996,7 @@ _Appears in:_
 | `members` _[EtcdMemberStatus](#etcdmemberstatus) array_ | Members represents the members of the etcd cluster |  |  |
 | `peerUrlTLSEnabled` _boolean_ | PeerUrlTLSEnabled captures the state of peer url TLS being enabled for the etcd member(s) |  |  |
 | `selector` _string_ | Selector is a label query over pods that should match the replica count.<br />It must match the pod template's labels. |  |  |
+| `bootstrapWithExistingClusterMembers` _[BootstrapWithExistingClusterStatus](#bootstrapwithexistingclusterstatus)_ | BootstrapWithExistingClusterMembers tracks which source members were joined. |  |  |
 
 
 #### GarbageCollectionPolicy
