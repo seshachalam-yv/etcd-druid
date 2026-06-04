@@ -8,11 +8,12 @@ import (
 	"context"
 
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/core/v1alpha1"
-	. "github.com/gardener/etcd-druid/internal/health/condition"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	. "github.com/gardener/etcd-druid/internal/health/condition"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = Describe("BootstrapWithExistingClusterCheck", func() {
@@ -168,7 +169,7 @@ var _ = Describe("BootstrapWithExistingClusterCheck", func() {
 						},
 					},
 					Status: druidv1alpha1.EtcdStatus{
-						Members: []druidv1alpha1.EtcdMemberStatus{readyMember, notReadyMember, readyMember},
+						Members:                             []druidv1alpha1.EtcdMemberStatus{readyMember, notReadyMember, readyMember},
 						BootstrapWithExistingClusterMembers: joinedMembers,
 					},
 				}

@@ -374,6 +374,8 @@ spec:
                         to initial-advertise-peer-urls. Each entry maps a member name to its
                         additional URLs. The member name must follow the pattern {etcd-name}-{index}
                         where index is 0 to (replicas-1) (e.g., etcd-main-0, etcd-main-1 etc).
+                        When spec.memberNamePrefix is set, member names become
+                        "<memberNamePrefix>-<etcd-name>-<index>".
                         Updating this field on a running cluster triggers a ConfigMap update
                         and a rolling restart of the StatefulSet.
                       items:
@@ -383,6 +385,9 @@ spec:
                             description: |-
                               MemberName is the etcd member name.
                               Must match the etcd member name of the cluster (e.g., etcd-main-0).
+                              When spec.memberNamePrefix is set, the member name becomes
+                              "<memberNamePrefix>-<etcd-name>-<index>". The top-level CEL rules on
+                              Etcd already incorporate the prefix when validating these names.
                             maxLength: 253
                             pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?-[0-9]+$
                             type: string
@@ -421,29 +426,55 @@ spec:
                       description: BootstrapWithExistingCluster configures this etcd to join an existing cluster.
                       properties:
                         clientEndpoints:
-                          description: ClientEndpoints are the client endpoints of the source cluster for member management.
+                          description: |-
+                            ClientEndpoints are the client endpoints of the source cluster for member management.
+                            Must be valid HTTP or HTTPS URLs with scheme and host; port is optional
+                            (e.g., https://etcd-source-client.source-ns.svc:2379).
+                            A maximum of 10 client endpoints can be specified (constrained by CEL validation cost budget).
                           items:
+                            maxLength: 2048
                             type: string
+                          maxItems: 10
+                          minItems: 1
                           type: array
+                          x-kubernetes-list-type: atomic
                         members:
-                          description: Members are the existing etcd members of the source cluster.
+                          description: |-
+                            Members are the existing etcd members of the source cluster.
+                            A maximum of 10 members can be specified (constrained by CEL validation cost budget).
                           items:
                             description: BootstrapExistingMember represents an existing etcd member in a source cluster.
                             properties:
                               name:
                                 description: Name is the etcd member name in the source cluster.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                                 type: string
                               peerUrls:
-                                description: PeerURLs are the peer URLs of this member.
+                                description: |-
+                                  PeerURLs are the peer URLs of this member.
+                                  Must be valid HTTP or HTTPS URLs with scheme and host; port is optional
+                                  (e.g., https://10.0.0.1:2380).
+                                  A maximum of 5 peer URLs can be specified per member (constrained by CEL validation cost budget).
                                 items:
+                                  maxLength: 2048
                                   type: string
+                                maxItems: 5
                                 minItems: 1
                                 type: array
+                                x-kubernetes-list-type: atomic
                             required:
                               - name
                               - peerUrls
                             type: object
+                          maxItems: 10
+                          minItems: 1
                           type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                        - clientEndpoints
+                        - members
                       type: object
                     clientPort:
                       format: int32
@@ -1840,27 +1871,38 @@ spec:
               description: EtcdStatus defines the observed state of Etcd.
               properties:
                 bootstrapWithExistingClusterMembers:
-                  description: BootstrapWithExistingClusterMembers tracks which source members were joined.
-                  properties:
-                    joinedWith:
-                      items:
-                        description: BootstrapJoinedMember records a member that was registered with the source cluster.
-                        properties:
-                          lastTransitionTime:
-                            format: date-time
-                            type: string
-                          name:
-                            type: string
-                          peerUrls:
-                            items:
-                              type: string
-                            type: array
-                        required:
-                          - lastTransitionTime
-                          - name
-                        type: object
-                      type: array
-                  type: object
+                  description: |-
+                    BootstrapWithExistingClusterMembers tracks the source-cluster members
+                    that were joined when this etcd was bootstrapped. A non-empty list
+                    while spec.etcd.bootstrapWithExistingCluster is unset signals that
+                    source members should be removed and the target should become a
+                    standalone cluster.
+                  items:
+                    description: BootstrapJoinedMember records a member that was registered with the source cluster.
+                    properties:
+                      joinedAt:
+                        description: |-
+                          JoinedAt is the time at which this source member was recorded as joined.
+                          Bootstrap is a one-shot event; this timestamp is set once and not updated.
+                        format: date-time
+                        type: string
+                      name:
+                        description: Name is the source-cluster member name that was joined with.
+                        type: string
+                      peerUrls:
+                        description: |-
+                          PeerURLs are the peer URLs of the joined source member, copied from
+                          spec.etcd.bootstrapWithExistingCluster.members at the time of join.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    required:
+                      - joinedAt
+                      - name
+                    type: object
+                  type: array
+                  x-kubernetes-list-type: atomic
                 conditions:
                   description: Conditions represents the latest available observations of an etcd's current state.
                   items:

@@ -485,8 +485,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `name` _string_ | Name is the etcd member name in the source cluster. |  |  |
-| `peerUrls` _string array_ | PeerURLs are the peer URLs of this member. |  | MinItems: 1 <br /> |
+| `name` _string_ | Name is the etcd member name in the source cluster. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Required: \{\} <br /> |
+| `peerUrls` _string array_ | PeerURLs are the peer URLs of this member.<br />Must be valid HTTP or HTTPS URLs with scheme and host; port is optional<br />(e.g., https://10.0.0.1:2380).<br />A maximum of 5 peer URLs can be specified per member (constrained by CEL validation cost budget). |  | MaxItems: 5 <br />MinItems: 1 <br />Required: \{\} <br />items:MaxLength: 2048 <br />items:XValidation: \{(self.startsWith('http://') \|\| self.startsWith('https://')) && isURL(self) must be a valid http:// or https:// URL (e.g., https://10.0.0.1:2380)    <nil>\} <br /> |
 
 
 #### BootstrapJoinedMember
@@ -498,20 +498,31 @@ BootstrapJoinedMember records a member that was registered with the source clust
 
 
 _Appears in:_
-- [BootstrapWithExistingClusterStatus](#bootstrapwithexistingclusterstatus)
+- [EtcdStatus](#etcdstatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `name` _string_ |  |  |  |
-| `peerUrls` _string array_ |  |  |  |
-| `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ |  |  |  |
+| `name` _string_ | Name is the source-cluster member name that was joined with. |  |  |
+| `peerUrls` _string array_ | PeerURLs are the peer URLs of the joined source member, copied from<br />spec.etcd.bootstrapWithExistingCluster.members at the time of join. |  |  |
+| `joinedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#time-v1-meta)_ | JoinedAt is the time at which this source member was recorded as joined.<br />Bootstrap is a one-shot event; this timestamp is set once and not updated. |  |  |
 
 
 #### BootstrapWithExistingCluster
 
 
 
-BootstrapWithExistingCluster configures bootstrapping by joining an existing etcd cluster.
+BootstrapWithExistingCluster configures bootstrapping of an Etcd by joining
+an existing (source) etcd cluster.
+
+When set, the source cluster's members are appended to the target's
+initial-cluster configuration, and the source's client endpoints are passed
+to backup-restore for member management. The source's serving certificates
+must be signed by a certificate authority already trusted by the target's
+ClientUrlTLS truststore; no separate source CA reference is supported.
+
+This field can only be set at creation time and cannot be added on update.
+Clearing it after a successful join is reserved as the future trigger for
+removing the source members from the joined cluster.
 
 
 
@@ -520,24 +531,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `members` _[BootstrapExistingMember](#bootstrapexistingmember) array_ | Members are the existing etcd members of the source cluster. |  |  |
-| `clientEndpoints` _string array_ | ClientEndpoints are the client endpoints of the source cluster for member management. |  |  |
-
-
-#### BootstrapWithExistingClusterStatus
-
-
-
-BootstrapWithExistingClusterStatus tracks bootstrap join state.
-
-
-
-_Appears in:_
-- [EtcdStatus](#etcdstatus)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `joinedWith` _[BootstrapJoinedMember](#bootstrapjoinedmember) array_ |  |  |  |
+| `members` _[BootstrapExistingMember](#bootstrapexistingmember) array_ | Members are the existing etcd members of the source cluster.<br />A maximum of 10 members can be specified (constrained by CEL validation cost budget). |  | MaxItems: 10 <br />MinItems: 1 <br />Required: \{\} <br /> |
+| `clientEndpoints` _string array_ | ClientEndpoints are the client endpoints of the source cluster for member management.<br />Must be valid HTTP or HTTPS URLs with scheme and host; port is optional<br />(e.g., https://etcd-source-client.source-ns.svc:2379).<br />A maximum of 10 client endpoints can be specified (constrained by CEL validation cost budget). |  | MaxItems: 10 <br />MinItems: 1 <br />Required: \{\} <br />items:MaxLength: 2048 <br />items:XValidation: \{(self.startsWith('http://') \|\| self.startsWith('https://')) && isURL(self) must be a valid http:// or https:// URL (e.g., https://etcd-source-client.source-ns.svc:2379)    <nil>\} <br /> |
 
 
 #### ClientService
@@ -742,7 +737,7 @@ _Appears in:_
 | `metrics` _[MetricsLevel](#metricslevel)_ | Metrics defines the level of detail for exported metrics of etcd, specify 'extensive' to include histogram metrics. |  | Enum: [basic extensive] <br /> |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#resourcerequirements-v1-core)_ | Resources defines the compute Resources required by etcd container.<br />More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/ |  |  |
 | `clientUrlTls` _[TLSConfig](#tlsconfig)_ | ClientUrlTLS contains the ca, server TLS and client TLS secrets for client communication to ETCD cluster |  |  |
-| `additionalAdvertisePeerURLs` _[MemberPeerURLs](#memberpeerurls) array_ | AdditionalAdvertisePeerURLs contains extra per-member peer URLs to append<br />to initial-advertise-peer-urls. Each entry maps a member name to its<br />additional URLs. The member name must follow the pattern \{etcd-name\}-\{index\}<br />where index is 0 to (replicas-1) (e.g., etcd-main-0, etcd-main-1 etc).<br />Updating this field on a running cluster triggers a ConfigMap update<br />and a rolling restart of the StatefulSet. |  | MaxItems: 10 <br /> |
+| `additionalAdvertisePeerURLs` _[MemberPeerURLs](#memberpeerurls) array_ | AdditionalAdvertisePeerURLs contains extra per-member peer URLs to append<br />to initial-advertise-peer-urls. Each entry maps a member name to its<br />additional URLs. The member name must follow the pattern \{etcd-name\}-\{index\}<br />where index is 0 to (replicas-1) (e.g., etcd-main-0, etcd-main-1 etc).<br />When spec.memberNamePrefix is set, member names become<br />"<memberNamePrefix>-<etcd-name>-<index>".<br />Updating this field on a running cluster triggers a ConfigMap update<br />and a rolling restart of the StatefulSet. |  | MaxItems: 10 <br /> |
 | `peerUrlTls` _[TLSConfig](#tlsconfig)_ | PeerUrlTLS contains the ca and server TLS secrets for peer communication within ETCD cluster<br />Currently, PeerUrlTLS does not require client TLS secrets for gardener implementation of ETCD cluster. |  |  |
 | `etcdDefragTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | EtcdDefragTimeout defines the timeout duration for etcd defrag call |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 | `heartbeatDuration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.29/#duration-v1-meta)_ | HeartbeatDuration defines the duration for members to send heartbeats. The default value is 10s. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
@@ -996,7 +991,7 @@ _Appears in:_
 | `members` _[EtcdMemberStatus](#etcdmemberstatus) array_ | Members represents the members of the etcd cluster |  |  |
 | `peerUrlTLSEnabled` _boolean_ | PeerUrlTLSEnabled captures the state of peer url TLS being enabled for the etcd member(s) |  |  |
 | `selector` _string_ | Selector is a label query over pods that should match the replica count.<br />It must match the pod template's labels. |  |  |
-| `bootstrapWithExistingClusterMembers` _[BootstrapWithExistingClusterStatus](#bootstrapwithexistingclusterstatus)_ | BootstrapWithExistingClusterMembers tracks which source members were joined. |  |  |
+| `bootstrapWithExistingClusterMembers` _[BootstrapJoinedMember](#bootstrapjoinedmember) array_ | BootstrapWithExistingClusterMembers tracks the source-cluster members<br />that were joined when this etcd was bootstrapped. A non-empty list<br />while spec.etcd.bootstrapWithExistingCluster is unset signals that<br />source members should be removed and the target should become a<br />standalone cluster. |  |  |
 
 
 #### GarbageCollectionPolicy
@@ -1043,7 +1038,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `memberName` _string_ | MemberName is the etcd member name.<br />Must match the etcd member name of the cluster (e.g., etcd-main-0). |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?-[0-9]+$` <br />Required: \{\} <br /> |
+| `memberName` _string_ | MemberName is the etcd member name.<br />Must match the etcd member name of the cluster (e.g., etcd-main-0).<br />When spec.memberNamePrefix is set, the member name becomes<br />"<memberNamePrefix>-<etcd-name>-<index>". The top-level CEL rules on<br />Etcd already incorporate the prefix when validating these names. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?-[0-9]+$` <br />Required: \{\} <br /> |
 | `urls` _string array_ | URLs is a list of additional peer URLs for this member.<br />These will be appended to the default internal service URL.<br />A maximum of 5 URLs can be specified per member (constrained by CEL validation cost budget).<br />Must be valid HTTP(S) URLs with scheme and host; port is optional (e.g., https://10.0.0.1:2380). |  | MaxItems: 5 <br />MinItems: 1 <br />Required: \{\} <br /> |
 
 
